@@ -1,0 +1,103 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  SUPER_USER
+  ADMIN
+  TRAINER
+}
+
+model User {
+  id            Int       @id @default(autoincrement())
+  email         String    @unique
+  name          String
+  passwordHash  String
+  role          Role      @default(TRAINER)
+  isActive      Boolean   @default(true)
+
+  // MFA
+  mfaCode       String?
+  mfaExpiresAt  DateTime?
+
+  // Axcelerate link (for trainers)
+  axcelerateContactId String?
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  createdById   Int?
+  createdBy     User?     @relation("CreatedUsers", fields: [createdById], references: [id])
+  createdUsers  User[]    @relation("CreatedUsers")
+}
+
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model WorkshopProgress {
+  id               Int      @id @default(autoincrement())
+  instanceId       Int      @unique
+  trainerContactId Int      @default(0)
+  completedSteps   Int      @default(0)
+  totalSteps       Int      @default(3)
+  isComplete       Boolean  @default(false)
+  statusPayload    String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([isComplete])
+  @@index([trainerContactId])
+}
+
+model StudentChecklist {
+  id         Int      @id @default(autoincrement())
+  instanceId Int
+  contactId  Int
+  courseCode String   @default("")
+  data       String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([instanceId, contactId])
+  @@index([instanceId])
+}
+
+model WorkshopSnapshot {
+  id                Int      @id @default(autoincrement())
+  instanceId        Int
+  courseCode        String
+  snapshotData      String
+  masterFingerprint String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([instanceId, courseCode])
+}
+
+model WorkshopUpload {
+  id              Int      @id @default(autoincrement())
+  instanceId      Int
+  contactId       Int?
+  portfolioTypeId Int?
+  blobPath        String   @default("")
+  blobUrl         String   @default("")
+  kind            String   @default("")
+  filename        String   @default("")
+  mimeType        String   @default("")
+  status          String   @default("active")
+  proxyKey        String?  @unique
+  wpProxyKey      String?
+  axceleratePortfolioId Int?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([instanceId])
+  @@index([instanceId, contactId])
+}

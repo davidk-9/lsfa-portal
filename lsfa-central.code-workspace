@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../dk-leda"
+		},
+		{
+			"path": "../dk-trainer-portal"
+		}
+	],
+	"settings": {}
+}

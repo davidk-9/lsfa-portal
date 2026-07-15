@@ -1,0 +1,193 @@
+.checklist-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.checklist-modal {
+  background: #fff;
+  border-radius: 10px;
+  width: 92%;
+  max-width: 780px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+
+.checklist-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.checklist-modal-header h2 { font-size: 17px; font-weight: 700; margin-bottom: 4px; }
+.checklist-meta { font-size: 12px; color: #64748b; }
+
+.checklist-close {
+  background: none; border: none; font-size: 18px;
+  cursor: pointer; color: #94a3b8; padding: 0 4px;
+}
+.checklist-close:hover { color: #1e293b; }
+
+.checklist-loading, .checklist-empty {
+  padding: 32px 20px;
+  text-align: center;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.checklist-toolbar {
+  padding: 10px 20px;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  gap: 8px;
+}
+
+.checklist-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 20px;
+}
+
+/* Tasks */
+.cl-task {
+  margin-bottom: 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.cl-task-title {
+  background: #f1f5f9;
+  padding: 8px 12px;
+  font-weight: 700;
+  font-size: 13px;
+  color: #1e293b;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cl-task-id { font-weight: 400; color: #94a3b8; font-size: 11px; }
+
+.cl-btn-comment {
+  background: none;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  color: #475569;
+  margin-left: auto;
+}
+.cl-btn-comment:hover { background: #f8fafc; }
+
+.cl-comment-display {
+  background: #fefce8;
+  border-left: 3px solid #fde047;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #713f12;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.cl-comment-clear {
+  background: none; border: none; cursor: pointer;
+  color: #94a3b8; font-size: 14px; padding: 0;
+}
+.cl-comment-clear:hover { color: #475569; }
+
+/* Elements */
+.cl-element {
+  border-bottom: 1px solid #f1f5f9;
+}
+.cl-element:last-child { border-bottom: none; }
+
+.cl-element-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  gap: 8px;
+}
+
+.cl-element-name { font-size: 13px; flex: 1; }
+.cl-overall {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.os-s { background: #d1fae5; color: #065f46; }
+.os-n { background: #fee2e2; color: #991b1b; }
+.os-pending { color: #94a3b8; }
+
+/* Sub-elements */
+.cl-sub-elements { padding: 0 12px 6px 24px; }
+.cl-sub-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: 12px;
+  border-top: 1px solid #f8fafc;
+}
+.cl-sub-name { flex: 1; color: #475569; }
+
+/* S/N buttons */
+.cl-sn-btns { display: flex; gap: 4px; }
+
+.cl-btn-s, .cl-btn-n {
+  width: 28px; height: 24px;
+  border-radius: 4px;
+  border: 1px solid #d1d5db;
+  background: #f8fafc;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.cl-btn-s.active { background: #16a34a; color: #fff; border-color: #16a34a; }
+.cl-btn-n.active { background: #dc2626; color: #fff; border-color: #dc2626; }
+.cl-btn-s:hover:not(.active) { background: #d1fae5; }
+.cl-btn-n:hover:not(.active) { background: #fee2e2; }
+
+/* Toolbar / footer buttons */
+.cl-btn-green {
+  background: #16a34a; color: #fff; border: none;
+  border-radius: 5px; padding: 6px 14px; font-size: 12px;
+  font-weight: 600; cursor: pointer;
+}
+.cl-btn-green:hover { background: #15803d; }
+
+.checklist-footer {
+  padding: 12px 20px;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.cl-btn-save {
+  background: #ef4444; color: #fff; border: none;
+  border-radius: 6px; padding: 8px 20px;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.cl-btn-save:hover:not(:disabled) { background: #dc2626; }
+.cl-btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.cl-btn-cancel {
+  background: #f1f5f9; color: #1e293b;
+  border: 1px solid #d1d5db; border-radius: 6px;
+  padding: 8px 16px; font-size: 13px; cursor: pointer;
+}
+.cl-btn-cancel:hover { background: #e2e8f0; }
