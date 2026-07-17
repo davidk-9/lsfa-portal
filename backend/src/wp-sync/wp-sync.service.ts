@@ -3,6 +3,10 @@ import axios from 'axios';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../settings/settings.service';
 
+// One-time, READ-ONLY import from the legacy WordPress plugin.
+// It pulls data OUT of WordPress so the new system can be tested with real-shaped
+// data, and is run once at cut-over. It must NEVER write back to WordPress, and a
+// full re-run intentionally overwrites local rows (WordPress is the only source).
 @Injectable()
 export class WpSyncService {
   private readonly logger = new Logger(WpSyncService.name);
@@ -11,6 +15,28 @@ export class WpSyncService {
     private prisma: PrismaService,
     private settings: SettingsService,
   ) {}
+
+  // Durable proxy base URL (same source of truth as the uploads controller).
+  private async publicBaseUrl(): Promise<string> {
+    const configured = await this.settings.get('public_base_url');
+    return (configured?.trim() || process.env.PUBLIC_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '');
+  }
+
+  // Remove WordPress authorship from imported checklist JSON. last_modified_by holds
+  // a WordPress user id that is meaningless in this system; going forward it is set by us.
+  private stripWpAuthorship(rawData: any): string {
+    try {
+      const obj = typeof rawData === 'string' ? JSON.parse(rawData) : rawData;
+      if (obj && typeof obj === 'object') {
+        if ('last_modified_by' in obj) obj.last_modified_by = null;
+        if ('created_by' in obj) obj.created_by = null;
+        return JSON.stringify(obj);
+      }
+    } catch {
+      /* not JSON — store as-is */
+    }
+    return typeof rawData === 'string' ? rawData : JSON.stringify(rawData ?? {});
+  }
 
   async runSync(): Promise<{ success: boolean; summary: Record<string, number>; errors: string[] }> {
     const wpUrl = await this.settings.get('wp_sync_url');
@@ -136,7 +162,7 @@ export class WpSyncService {
         await this.prisma.workshopProgress.upsert({
           where: { instanceId },
           update: {
-            trainerContactId: parseInt(row.trainer_contact_id ?? '0') || 0,
+            trainerContactId: String(row.trainer_contact_id ?? ''),
             completedSteps: parseInt(row.completed_steps ?? '0') || 0,
             totalSteps: parseInt(row.total_steps ?? '3') || 3,
             isComplete: row.is_complete === '1' || row.is_complete === 1,
@@ -144,7 +170,7 @@ export class WpSyncService {
           },
           create: {
             instanceId,
-            trainerContactId: parseInt(row.trainer_contact_id ?? '0') || 0,
+            trainerContactId: String(row.trainer_contact_id ?? ''),
             completedSteps: parseInt(row.completed_steps ?? '0') || 0,
             totalSteps: parseInt(row.total_steps ?? '3') || 3,
             isComplete: row.is_complete === '1' || row.is_complete === 1,
@@ -169,7 +195,8 @@ export class WpSyncService {
         const contactId = parseInt(row.contact_id ?? '0');
         if (!instanceId || !contactId) continue;
 
-        const data = row.checklist_data ?? row.data ?? '{}';
+        // Strip WordPress authorship (last_modified_by = WP user id, meaningless here).
+        const data = this.stripWpAuthorship(row.checklist_data ?? row.data ?? '{}');
 
         await this.prisma.studentChecklist.upsert({
           where: { instanceId_contactId: { instanceId, contactId } },
@@ -231,6 +258,7 @@ export class WpSyncService {
 
   private async syncUploads(rows: any[], errors: string[]): Promise<number> {
     let count = 0;
+    const base = await this.publicBaseUrl();
     for (const row of rows) {
       try {
         const instanceId = parseInt(row.instance_id ?? '0');
@@ -271,6 +299,17 @@ export class WpSyncService {
         const contactId = row.contact_id ? parseInt(row.contact_id) : null;
         const proxyKey = `wp-${row.id}`;
 
+        // Map WordPress upload status onto ours (one-time import; files always live in Azure now):
+        //   has an Axcelerate id OR wp status 'synced' → 'synced'; otherwise 'active'.
+        //   wp 'error'/'pending' → 'active', since the blob still exists in Azure.
+        const hasAxId = !!(row.ax_portfolio_id || row.ax_file_id);
+        const status = hasAxId || row.status === 'synced' ? 'synced' : 'active';
+
+        // Prefer a durable proxy URL when we have a blob path; the proxy mints a fresh
+        // SAS on access so imported links don't rot either. Fall back to the stored
+        // URL only when there is no blob path to proxy.
+        const durableUrl = blobPath ? `${base}/proxy/${proxyKey}` : blobUrl;
+
         const existing = await this.prisma.workshopUpload.findUnique({ where: { proxyKey } });
         if (existing) {
           count++;
@@ -283,11 +322,11 @@ export class WpSyncService {
             contactId,
             portfolioTypeId,
             blobPath,
-            blobUrl,
+            blobUrl: durableUrl,
             kind,
             filename: row.filename ?? '',
             mimeType: row.mime ?? '',
-            status: 'active',
+            status,
             proxyKey,
             wpProxyKey: wpProxyKey || null,
             axceleratePortfolioId: row.ax_portfolio_id ? parseInt(row.ax_portfolio_id) : null,

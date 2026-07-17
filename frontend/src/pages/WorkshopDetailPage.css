@@ -328,6 +328,9 @@
 .wd-status-btn.pending { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
 .wd-status-btn.competent { background: #d1fae5; color: #065f46; border-color: #6ee7b7; }
 .wd-status-btn.not-competent { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+.wd-status-btn.locked { opacity: 0.6; cursor: not-allowed; }
+.wd-doc-btn:disabled,
+.wd-upload-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .wd-doc-btn:hover,
 .wd-delete-btn:hover { background: #e2e8f0; }
@@ -354,3 +357,92 @@
 }
 .wd-upload-btn:hover { background: #e2e8f0; }
 .wd-upload-btn.uploaded:hover { background: #15803d; }
+
+.wd-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+  padding: 16px;
+}
+.wd-modal-panel {
+  background: #fff;
+  border-radius: 8px;
+  width: min(920px, 100%);
+  max-height: 88vh;
+  overflow: hidden;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.2);
+}
+.wd-doc-modal, .wd-evidence-modal { width: min(960px, 100%); }
+.wd-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  gap: 12px;
+}
+.wd-modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wd-modal-subtitle {
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 2px;
+}
+.wd-modal-close {
+  border: none;
+  background: none;
+  font-size: 18px;
+  cursor: pointer;
+  color: #64748b;
+}
+.wd-doc-modal-content {
+  padding: 16px;
+  max-height: 72vh;
+  overflow: auto;
+}
+.wd-evidence-modal-content {
+  padding: 16px;
+  max-height: 72vh;
+  overflow: auto;
+}
+.wd-json-modal {
+  width: min(860px, 100%);
+}
+.wd-json-content {
+  margin: 0;
+  padding: 16px;
+  width: 100%;
+  min-height: 72vh;
+  max-height: 72vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  background: #0f172a;
+  color: #e2e8f0;
+  border: none;
+  resize: vertical;
+}
+.wd-evidence-embed {
+  width: 100%;
+  min-height: 70vh;
+  border: 1px solid #e2e8f0;
+}
+.wd-evidence-image {
+  max-width: 100%;
+  max-height: 70vh;
+  display: block;
+  margin: 0 auto;
+}
+.row-checklist-locked {
+  background: #f8fafc;
+}

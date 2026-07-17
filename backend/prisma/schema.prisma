@@ -4,6 +4,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 enum Role {
@@ -44,7 +45,7 @@ model Setting {
 model WorkshopProgress {
   id               Int      @id @default(autoincrement())
   instanceId       Int      @unique
-  trainerContactId Int      @default(0)
+  trainerContactId String   @default("")
   completedSteps   Int      @default(0)
   totalSteps       Int      @default(3)
   isComplete       Boolean  @default(false)

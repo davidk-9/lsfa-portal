@@ -36,7 +36,7 @@ export const settingsApi = {
 export const workshopsApi = {
   getCalendar: (month: number, year: number) =>
     api.get('/workshops/calendar', { params: { month, year } }),
-  getTrainerCalendar: (trainerId: number, month: number, year: number) =>
+  getTrainerCalendar: (trainerId: string, month: number, year: number) =>
     api.get('/workshops/trainer-calendar', { params: { trainerId, month, year } }),
   getFilters: () => api.get('/workshops/filters'),
 };
@@ -60,9 +60,23 @@ export const workshopDetailApi = {
   saveChecklist: (data: object) => api.post('/workshop-detail/checklist', data),
   resetChecklists: (instanceId: number, courseCode: string) =>
     api.post('/workshop-detail/checklist/reset', { instanceId, courseCode }),
+  bulkMarkAllTasksSatisfactory: (instanceId: number, courseCode: string) =>
+    api.post('/workshop-detail/checklist/bulk-mark-satisfactory', { instanceId, courseCode }),
   saveProgress: (data: object) => api.post('/workshop-detail/progress', data),
+  getTaskStructure: (instanceId: number, courseCode: string) =>
+    api.get('/workshop-detail/task-structure', { params: { instanceId, courseCode } }),
+  saveWizardResults: (data: object) => api.post('/workshop-detail/wizard-save', data),
   getOlka: (instanceId: number, courseCode: string) =>
     api.get('/workshop-detail/olka', { params: { instanceId, courseCode } }),
   getSuccessComment: (ptId: string) =>
     api.get('/workshop-detail/success-comment', { params: { ptId } }),
+};
+
+export const aiApi = {
+  classifyPage: (data: {
+    instanceId: number;
+    pageNumber: number;
+    pageImage: string;
+    roster: { contact_id: number; name: string }[];
+  }) => api.post('/ai/classify-page', data),
 };

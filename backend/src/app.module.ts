@@ -12,6 +12,7 @@ import { WorkshopDetailModule } from './workshop-detail/workshop-detail.module';
 import { AzureStorageModule } from './azure-storage/azure-storage.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { WpSyncModule } from './wp-sync/wp-sync.module';
+import { AiModule } from './ai/ai.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { WpSyncModule } from './wp-sync/wp-sync.module';
     AzureStorageModule,
     UploadsModule,
     WpSyncModule,
+    AiModule,
   ],
   providers: [
     {

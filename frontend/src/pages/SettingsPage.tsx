@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { settingsApi } from '../api';
 import './SettingsPage.css';
 
-type TabId = 'api' | 'course-codes' | 'trainer-portal' | 'azure-storage' | 'checklists' | 'practical-tasks' | 'success-comments' | 'bulk-scheduler' | 'wp-sync';
+type TabId = 'api' | 'course-codes' | 'trainer-portal' | 'azure-storage' | 'checklists' | 'practical-tasks' | 'success-comments' | 'ai' | 'bulk-scheduler' | 'wp-sync';
 
 interface Tab {
   id: TabId;
@@ -18,6 +18,7 @@ const TABS: Tab[] = [
   { id: 'checklists', label: 'Course Checklists' },
   { id: 'practical-tasks', label: 'Practical Tasks' },
   { id: 'success-comments', label: 'Success Comments' },
+  { id: 'ai', label: 'AI Evidence' },
   { id: 'bulk-scheduler', label: 'Bulk Scheduler' },
   { id: 'wp-sync', label: 'WordPress Sync' },
 ];
@@ -45,6 +46,10 @@ const KEYS = {
   AZURE_LINK_MODE: 'azure_link_mode',
   AZURE_SAS_TOKEN: 'azure_sas_token',
   AZURE_PATH_PREFIX: 'azure_path_prefix',
+  PUBLIC_BASE_URL: 'public_base_url',
+  OPENAI_API_KEY: 'openai_api_key',
+  AI_MODEL_PRIMARY: 'ai_model_primary',
+  AI_MODEL_FALLBACK: 'ai_model_fallback',
   WP_SYNC_URL: 'wp_sync_url',
   WP_SYNC_TOKEN: 'wp_sync_token',
 };
@@ -136,6 +141,9 @@ export function SettingsPage() {
           )}
           {activeTab === 'success-comments' && (
             <SuccessCommentsTab val={val} set={set} />
+          )}
+          {activeTab === 'ai' && (
+            <AiSettingsTab val={val} set={set} />
           )}
           {activeTab === 'bulk-scheduler' && (
             <PlaceholderTab label={TABS.find(t => t.id === activeTab)!.label} />
@@ -262,10 +270,63 @@ function CourseCodesTab({ val, set }: { val: (k: string) => string; set: (k: str
   );
 }
 
+// ─── Tab: AI Evidence ─────────────────────────────────────────────────────────
+
+function AiSettingsTab({ val, set }: { val: (k: string) => string; set: (k: string, v: string) => void }) {
+  const [showKey, setShowKey] = useState(false);
+
+  return (
+    <div className="tab-panel">
+      <h2>AI Evidence</h2>
+      <p className="tab-description">
+        Configuration for the AI-assisted bulk evidence uploader. Trainers scan a stack of paperwork as a
+        single PDF, and the AI identifies the student and paperwork type for each page before upload.
+      </p>
+
+      <SettingSection title="OpenAI">
+        <SettingField label="OpenAI API Key" hint="Your OpenAI API key. Stored here in Settings — never hard-coded.">
+          <div className="input-with-toggle">
+            <input
+              type={showKey ? 'text' : 'password'}
+              value={val(KEYS.OPENAI_API_KEY)}
+              onChange={(e) => set(KEYS.OPENAI_API_KEY, e.target.value)}
+              placeholder="sk-..."
+              className="setting-input"
+            />
+            <button type="button" className="toggle-visibility" onClick={() => setShowKey(v => !v)}>
+              {showKey ? 'Hide' : 'Show'}
+            </button>
+          </div>
+        </SettingField>
+      </SettingSection>
+
+      <SettingSection title="Models">
+        <SettingField label="Primary Model" hint='Model used first for page classification. Default: "gpt-5.4-nano".'>
+          <input
+            type="text"
+            value={val(KEYS.AI_MODEL_PRIMARY) || 'gpt-5.4-nano'}
+            onChange={(e) => set(KEYS.AI_MODEL_PRIMARY, e.target.value)}
+            className="setting-input"
+            placeholder="gpt-5.4-nano"
+          />
+        </SettingField>
+        <SettingField label="Fallback Model" hint='Re-checks low-confidence pages. Default: "gpt-5.4-mini". Set equal to the primary model to disable fallback.'>
+          <input
+            type="text"
+            value={val(KEYS.AI_MODEL_FALLBACK) || 'gpt-5.4-mini'}
+            onChange={(e) => set(KEYS.AI_MODEL_FALLBACK, e.target.value)}
+            className="setting-input"
+            placeholder="gpt-5.4-mini"
+          />
+        </SettingField>
+      </SettingSection>
+    </div>
+  );
+}
+
 // ─── Tab: Azure Storage ───────────────────────────────────────────────────────
 
-function AzureStorageTab({ val, set }: { val: (k: string) => string; set: (k: string, v: string) => void }) {
-  const [showSecret, setShowSecret] = useState(false);
+function AzureStorageTab({ val, set }: { val: (k: string) => string; set: (k: string, v: string) => void }) {  const [showSecret, setShowSecret] = useState(false);
   const [showSas, setShowSas] = useState(false);
   const isEnabled = val(KEYS.AZURE_MODE) === 'azure';
 
@@ -332,6 +393,12 @@ function AzureStorageTab({ val, set }: { val: (k: string) => string; set: (k: st
             </div>
           </SettingField>
         )}
+      </SettingSection>
+
+      <SettingSection title="Durable File Proxy">
+        <SettingField label="Public Base URL" hint='Base URL for stable file links stored in Axcelerate, e.g. "https://app.lifesavingfirstaid.com.au". Files are served via {base}/proxy/{key}, which redirects to a freshly minted SAS link. Defaults to http://localhost:3000 for local testing.'>
+          <input type="text" value={val(KEYS.PUBLIC_BASE_URL)} onChange={(e) => set(KEYS.PUBLIC_BASE_URL, e.target.value)} className="setting-input setting-input-wide" placeholder="https://app.lifesavingfirstaid.com.au" />
+        </SettingField>
       </SettingSection>
     </div>
   );

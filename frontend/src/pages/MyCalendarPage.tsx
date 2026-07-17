@@ -87,8 +87,8 @@ export function MyCalendarPage() {
   // Use the impersonated trainer's Axcelerate ID when impersonating,
   // otherwise use the logged-in user's own Axcelerate ID
   const trainerContactId = user?.impersonating
-    ? parseInt(user.impersonatingAxcelerateContactId ?? '0') || 0
-    : parseInt(user?.axcelerateContactId ?? '0') || 0;
+    ? (user.impersonatingAxcelerateContactId ?? '')
+    : (user?.axcelerateContactId ?? '');
 
   useEffect(() => {
     workshopsApi.getFilters().then((res) => setLocations(res.data.locations)).catch(() => {});

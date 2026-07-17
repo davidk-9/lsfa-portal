@@ -100,11 +100,11 @@ export class WorkshopsService {
     return this.fetchCalendar(month, year, null);
   }
 
-  async getTrainerCalendar(trainerContactId: number, month: number, year: number): Promise<CalendarData> {
+  async getTrainerCalendar(trainerContactId: string, month: number, year: number): Promise<CalendarData> {
     return this.fetchCalendar(month, year, trainerContactId);
   }
 
-  private async fetchCalendar(month: number, year: number, trainerContactId: number | null): Promise<CalendarData> {
+  private async fetchCalendar(month: number, year: number, trainerContactId: string | null): Promise<CalendarData> {
     const now = new Date();
     const startDate = new Date(year, month - 1, 1);
     const endDate = new Date(year, month, 0, 23, 59, 59);

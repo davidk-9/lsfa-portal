@@ -3,7 +3,7 @@ import {
   ParseIntPipe, DefaultValuePipe,
 } from '@nestjs/common';
 import { WorkshopDetailService } from './workshop-detail.service';
-import { MarkAttendanceDto, SaveChecklistDto, SaveProgressDto } from './dto/workshop-detail.dto';
+import { MarkAttendanceDto, SaveChecklistDto, SaveProgressDto, WizardSaveDto } from './dto/workshop-detail.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @UseGuards(JwtAuthGuard)
@@ -58,9 +58,38 @@ export class WorkshopDetailController {
     return this.service.resetAllChecklists(instanceId, courseCode);
   }
 
+  @Post('checklist/bulk-mark-satisfactory')
+  bulkMarkAllTasksSatisfactory(
+    @Body('instanceId', ParseIntPipe) instanceId: number,
+    @Body('courseCode') courseCode: string,
+  ) {
+    return this.service.bulkMarkAllTasksSatisfactory(instanceId, courseCode || '');
+  }
+
   @Post('progress')
   saveProgress(@Body() dto: SaveProgressDto) {
     return this.service.saveWorkshopProgress(dto.instanceId, dto.trainerContactId, dto.status);
+  }
+
+  @Get('task-structure')
+  getTaskStructure(
+    @Query('instanceId', ParseIntPipe) instanceId: number,
+    @Query('courseCode', new DefaultValuePipe('')) courseCode: string,
+  ) {
+    return this.service.getTaskStructure(instanceId, courseCode);
+  }
+
+  @Post('wizard-save')
+  saveWizardResults(@Body() dto: WizardSaveDto) {
+    return this.service.saveWizardResults(
+      dto.instanceId,
+      dto.contactIds,
+      dto.ptId,
+      dto.taskResult,
+      dto.elementsResults,
+      dto.trainerComment ?? '',
+      dto.courseCode,
+    );
   }
 
   @Get('olka')

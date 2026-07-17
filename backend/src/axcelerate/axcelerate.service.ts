@@ -67,7 +67,7 @@ export class AxcelerateService {
 
   // Port of PHP get_trainer_workshops — adds trainerContactID filter
   async getTrainerWorkshops(
-    contactId: number,
+    contactId: string,
     dateMin: string,
     dateMax: string,
     enrolmentOpen: boolean | null,
@@ -154,19 +154,29 @@ export class AxcelerateService {
     });
   }
 
-  // PUT course/enrolment — used to sync checklist PDF URL to Axcelerate
-  // Port of PHP: PUT course/enrolment?contactID=X&type=w&instanceID=X&customField_u_obschecklist=URL
-  async putEnrolmentChecklistUrl(instanceId: number, contactId: number, checklistUrl: string): Promise<any> {
+  // PUT course/enrolment — set a single custom field on a student's workshop enrolment.
+  async putEnrolmentCustomField(
+    instanceId: number,
+    contactId: number,
+    fieldName: string,
+    value: string,
+  ): Promise<any> {
     const client = await this.getClient();
     const res = await client.put('course/enrolment', {}, {
       params: {
         contactID: contactId,
         type: 'w',
         instanceID: instanceId,
-        customField_u_obschecklist: checklistUrl,
+        [fieldName]: value,
       },
     });
     return res.data;
+  }
+
+  // PUT course/enrolment — used to sync checklist PDF URL to Axcelerate
+  // Port of PHP: PUT course/enrolment?contactID=X&type=w&instanceID=X&customField_u_obschecklist=URL
+  async putEnrolmentChecklistUrl(instanceId: number, contactId: number, checklistUrl: string): Promise<any> {
+    return this.putEnrolmentCustomField(instanceId, contactId, 'customField_u_obschecklist', checklistUrl);
   }
 
   // ── Contacts (cached per request cycle by caller) ────────────────────────────

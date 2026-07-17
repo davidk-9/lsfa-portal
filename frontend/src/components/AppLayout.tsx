@@ -20,35 +20,44 @@ export function AppLayout() {
       <ImpersonationBanner />
       <aside className="sidebar">
         <div className="sidebar-header">
-          <div className="sidebar-logo">LSFA Central</div>
-          <div className="sidebar-role">{user?.role?.replace('_', ' ')}</div>
+          <div className="sidebar-brand">
+            <img
+              className="sidebar-logo-image"
+              src="https://lifesavingfirstaid.com.au/wp-content/uploads/2019/08/RTO-test2.svg?t=1784182630"
+              alt="Life Saving First Aid logo"
+            />
+            <div className="sidebar-brand-text">
+              <div className="sidebar-logo">LSFA Central</div>
+              <div className="sidebar-role">{user?.role?.replace('_', ' ')}</div>
+            </div>
+          </div>
         </div>
 
         <nav className="sidebar-nav">
           {isSuperOrAdmin && (
             <>
               <div className="nav-section-label">Administration</div>
-              <NavLink to="/admin-calendar" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+              <NavLink to="/admin-calendar" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
                 Admin Calendar
               </NavLink>
-              <NavLink to="/trainers" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+              <NavLink to="/trainers" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
                 Trainer Portal
               </NavLink>
             </>
           )}
 
           <div className="nav-section-label">Trainer</div>
-          <NavLink to="/my-calendar" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+          <NavLink to="/my-calendar" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
             My Calendar
           </NavLink>
 
           {isSuperUser && (
             <>
               <div className="nav-section-label">System</div>
-              <NavLink to="/users" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+              <NavLink to="/users" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
                 User Management
               </NavLink>
-              <NavLink to="/settings" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+              <NavLink to="/settings" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
                 Settings
               </NavLink>
             </>
@@ -57,7 +66,9 @@ export function AppLayout() {
 
         <div className="sidebar-footer">
           <div className="sidebar-user-name">{user?.email}</div>
-          <button className="logout-btn" onClick={handleLogout}>Logout</button>
+          <button className="logout-btn" onClick={handleLogout}>
+            Logout
+          </button>
         </div>
       </aside>
 

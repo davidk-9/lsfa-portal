@@ -47,8 +47,14 @@ export function LoginPage() {
   return (
     <div className="login-page">
       <div className="login-card">
-        <div className="login-logo">LSFA Central</div>
-        <div className="login-tagline">Life Saving First Aid</div>
+        <div className="login-logo">
+          <img
+            className="login-logo-image"
+            src="https://lifesavingfirstaid.com.au/wp-content/uploads/2019/08/RTO-test2.svg?t=1784182630"
+            alt="Life Saving First Aid logo"
+          />
+        </div>
+        <div className="login-tagline">LSFA Central</div>
 
         {step === 'credentials' ? (
           <form onSubmit={handleLogin}>

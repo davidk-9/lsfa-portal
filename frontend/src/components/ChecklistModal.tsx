@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { workshopDetailApi } from '../api';
+import { useToast } from '../context/ToastContext';
 import './ChecklistModal.css';
 
 interface Props {
@@ -15,6 +16,7 @@ interface Props {
 export function ChecklistModal({
   instanceId, student, courseCode, trainerName, workshopDate, onClose, onSaved,
 }: Props) {
+  const toast = useToast();
   const [checklist, setChecklist] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -24,16 +26,25 @@ export function ChecklistModal({
 
   useEffect(() => {
     workshopDetailApi.getChecklist(instanceId, student.contactId, courseCode)
-      .then((res) => setChecklist(res.data))
-      .catch(() => {})
+      .then((res) => {
+        const payload = res?.data;
+        if (payload && typeof payload === 'object' && payload.student_checklist && typeof payload.student_checklist === 'object') {
+          setChecklist(payload);
+        } else if (payload && typeof payload === 'object' && Object.keys(payload).length > 0) {
+          setChecklist(payload);
+        } else {
+          setChecklist(null);
+        }
+      })
+      .catch(() => setChecklist(null))
       .finally(() => setLoading(false));
   }, [instanceId, student.contactId, courseCode]);
 
   const setSubElementStatus = (ptId: string, eid: string, seid: string, status: string | null) => {
     setChecklist((prev: any) => {
+      if (!prev || !prev.student_checklist) return prev;
       const next = JSON.parse(JSON.stringify(prev));
       next.student_checklist[ptId].elements[eid].sub_elements[seid].status = status;
-      // Derive element overall_status
       const el = next.student_checklist[ptId].elements[eid];
       const subStatuses = Object.values<any>(el.sub_elements ?? {}).map((s: any) => s.status);
       if (subStatuses.some((s) => s === 'N')) el.overall_status = 'N';
@@ -45,6 +56,7 @@ export function ChecklistModal({
 
   const setElementStatus = (ptId: string, eid: string, status: string | null) => {
     setChecklist((prev: any) => {
+      if (!prev || !prev.student_checklist) return prev;
       const next = JSON.parse(JSON.stringify(prev));
       const el = next.student_checklist[ptId].elements[eid];
       el.overall_status = status;
@@ -60,6 +72,7 @@ export function ChecklistModal({
 
   const markAllSatisfactory = () => {
     setChecklist((prev: any) => {
+      if (!prev || !prev.student_checklist) return prev;
       const next = JSON.parse(JSON.stringify(prev));
       for (const pt of Object.values<any>(next.student_checklist)) {
         for (const el of Object.values<any>(pt.elements ?? {})) {
@@ -94,7 +107,7 @@ export function ChecklistModal({
       onSaved();
       onClose();
     } catch (err: any) {
-      alert(`Save failed: ${err?.response?.data?.message ?? err?.message}`);
+      toast.error(`Save failed: ${err?.response?.data?.message ?? err?.message}`);
     } finally {
       setSaving(false);
     }
@@ -129,7 +142,7 @@ export function ChecklistModal({
               {Object.entries<any>(checklist.student_checklist).map(([ptId, pt]) => (
                 <div key={ptId} className="cl-task">
                   <div className="cl-task-title">
-                    {pt.name} <span className="cl-task-id">({ptId})</span>
+                    {pt.task_name ?? pt.name} <span className="cl-task-id">({ptId})</span>
                     <button
                       className="cl-btn-comment"
                       onClick={() => fetchSuccessComment(ptId)}
@@ -148,7 +161,7 @@ export function ChecklistModal({
                     return (
                       <div key={eid} className="cl-element">
                         <div className="cl-element-row">
-                          <span className="cl-element-name">{el.name}</span>
+                          <span className="cl-element-name">{el.title ?? el.name}</span>
                           {!hasSubElements && (
                             <div className="cl-sn-btns">
                               <button
@@ -172,7 +185,7 @@ export function ChecklistModal({
                           <div className="cl-sub-elements">
                             {Object.entries<any>(el.sub_elements).map(([seid, se]) => (
                               <div key={seid} className="cl-sub-row">
-                                <span className="cl-sub-name">{se.name}</span>
+                                <span className="cl-sub-name">{se.text ?? se.name}</span>
                                 <div className="cl-sn-btns">
                                   <button
                                     className={`cl-btn-s${se.status === 'S' ? ' active' : ''}`}

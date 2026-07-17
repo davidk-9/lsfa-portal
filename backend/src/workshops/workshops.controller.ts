@@ -20,7 +20,7 @@ export class WorkshopsController {
 
   @Get('trainer-calendar')
   getTrainerCalendar(
-    @Query('trainerId', new DefaultValuePipe(0), ParseIntPipe) trainerId: number,
+    @Query('trainerId', new DefaultValuePipe('')) trainerId: string,
     @Query('month', new DefaultValuePipe(0), ParseIntPipe) month: number,
     @Query('year', new DefaultValuePipe(0), ParseIntPipe) year: number,
   ) {

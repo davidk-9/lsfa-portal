@@ -4,6 +4,7 @@ import {
   BlobSASPermissions,
   generateBlobSASQueryParameters,
   StorageSharedKeyCredential,
+  SASProtocol,
 } from '@azure/storage-blob';
 import { ClientSecretCredential } from '@azure/identity';
 import { SettingsService } from '../settings/settings.service';
@@ -118,5 +119,45 @@ export class AzureStorageService {
   async getUrl(blobPath: string): Promise<string> {
     const config = await this.getConfig();
     return this.buildUrl(config, blobPath);
+  }
+
+  // Mint a fresh, short-lived read-only SAS URL for a single blob on demand.
+  // This is what keeps stored links durable: the proxy endpoint regenerates a
+  // link on every access, so the stable proxy URL persisted in Axcelerate never
+  // rots even though the underlying SAS expires quickly.
+  async generateReadUrl(blobPath: string, ttlMinutes = 15): Promise<string> {
+    const config = await this.getConfig();
+    const base = `https://${config.storageAccount}.blob.core.windows.net/${config.container}/${blobPath}`;
+
+    try {
+      const client = await this.getBlobServiceClient(config);
+      const now = Date.now();
+      const startsOn = new Date(now - 5 * 60 * 1000); // 5 min clock-skew allowance
+      const expiresOn = new Date(now + ttlMinutes * 60 * 1000);
+
+      // Requires the service principal to hold the "Storage Blob Delegator" role.
+      const userDelegationKey = await client.getUserDelegationKey(startsOn, expiresOn);
+      const sas = generateBlobSASQueryParameters(
+        {
+          containerName: config.container,
+          blobName: blobPath,
+          permissions: BlobSASPermissions.parse('r'),
+          startsOn,
+          expiresOn,
+          protocol: SASProtocol.Https,
+        },
+        userDelegationKey,
+        config.storageAccount,
+      ).toString();
+
+      return `${base}?${sas}`;
+    } catch (err: any) {
+      // Fall back to the configured static link so files stay reachable even if
+      // delegation SAS isn't available (e.g. role not yet granted, or public container).
+      this.logger.warn(
+        `User-delegation SAS unavailable for ${blobPath}, falling back to static link: ${err?.message}`,
+      );
+      return this.buildUrl(config, blobPath);
+    }
   }
 }

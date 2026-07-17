@@ -1,4 +1,4 @@
-import { IsNumber, IsString, IsOptional, IsIn } from 'class-validator';
+import { IsNumber, IsString, IsOptional, IsIn, IsArray, IsObject, Allow } from 'class-validator';
 
 export class MarkAttendanceDto {
   @IsNumber()
@@ -28,6 +28,7 @@ export class SaveChecklistDto {
   @IsString()
   courseCode: string;
 
+  @Allow()
   data: any;
 }
 
@@ -35,8 +36,35 @@ export class SaveProgressDto {
   @IsNumber()
   instanceId: number;
 
-  @IsNumber()
-  trainerContactId: number;
+  @IsString()
+  trainerContactId: string;
 
+  @Allow()
   status: any;
+}
+
+export class WizardSaveDto {
+  @IsNumber()
+  instanceId: number;
+
+  @IsArray()
+  @IsNumber({}, { each: true })
+  contactIds: number[];
+
+  @IsString()
+  ptId: string;
+
+  @IsString()
+  taskResult: string;
+
+  @IsObject()
+  elementsResults: Record<string, string>;
+
+  @IsOptional()
+  @IsString()
+  trainerComment?: string;
+
+  @IsOptional()
+  @IsString()
+  courseCode?: string;
 }
