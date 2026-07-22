@@ -102,3 +102,53 @@ model WorkshopUpload {
   @@index([instanceId])
   @@index([instanceId, contactId])
 }
+
+model BulkSchedulerSchedule {
+  id        Int                      @id @default(autoincrement())
+  name      String
+  createdAt DateTime                 @default(now())
+  updatedAt DateTime                 @updatedAt
+  items     BulkSchedulerScheduleItem[]
+  runs      BulkSchedulerRun[]
+}
+
+model BulkSchedulerScheduleItem {
+  id              Int                     @id @default(autoincrement())
+  scheduleId      Int
+  schedule        BulkSchedulerSchedule   @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  dayOfWeek       Int
+  locationId      String?
+  locationName    String?
+  startTime       String
+  endTime         String
+  maxParticipants Int                    @default(0)
+  courseCode      String
+  trainerId       String?
+  trainerName     String?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  @@index([scheduleId])
+  @@index([dayOfWeek])
+}
+
+model BulkSchedulerRun {
+  id            Int                     @id @default(autoincrement())
+  scheduleId    Int
+  schedule      BulkSchedulerSchedule   @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  startDate     String
+  endDate       String
+  status        String                  @default("queued")
+  totalExpected Int                     @default(0)
+  createdCount  Int                     @default(0)
+  errorCount    Int                     @default(0)
+  message       String                  @default("")
+  createdBy     String                  @default("")
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+
+  @@index([scheduleId])
+  @@index([status])
+}

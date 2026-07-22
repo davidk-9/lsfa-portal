@@ -10,6 +10,7 @@ import { TrainerPortalPage } from './pages/TrainerPortalPage';
 import { MyCalendarPage } from './pages/MyCalendarPage';
 import { UsersPage } from './pages/UsersPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { BulkSchedulerPage } from './pages/BulkSchedulerPage';
 import { WorkshopDetailPage } from './pages/WorkshopDetailPage';
 
 function App() {
@@ -60,6 +61,14 @@ function App() {
               element={
                 <ProtectedRoute allowedRoles={['SUPER_USER']}>
                   <SettingsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="bulk-scheduler"
+              element={
+                <ProtectedRoute allowedRoles={['SUPER_USER']}>
+                  <BulkSchedulerPage />
                 </ProtectedRoute>
               }
             />

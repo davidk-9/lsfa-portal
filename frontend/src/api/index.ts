@@ -72,6 +72,21 @@ export const workshopDetailApi = {
     api.get('/workshop-detail/success-comment', { params: { ptId } }),
 };
 
+export const bulkSchedulerApi = {
+  listSchedules: () => api.get('/bulk-scheduler/schedules'),
+  createSchedule: (name: string) => api.post('/bulk-scheduler/schedules', { name }),
+  renameSchedule: (id: number, name: string) => api.put(`/bulk-scheduler/schedules/${id}`, { name }),
+  duplicateSchedule: (id: number, name?: string) => api.post(`/bulk-scheduler/schedules/${id}/duplicate`, name ? { name } : {}),
+  deleteSchedule: (id: number) => api.delete(`/bulk-scheduler/schedules/${id}`),
+  addItem: (scheduleId: number, item: any) => api.post(`/bulk-scheduler/schedules/${scheduleId}/items`, item),
+  updateItem: (id: number, item: any) => api.put(`/bulk-scheduler/items/${id}`, item),
+  deleteItem: (id: number) => api.delete(`/bulk-scheduler/items/${id}`),
+  queueRun: (payload: { scheduleId: number; startDate: string; endDate: string; confirmValue?: string }) => api.post('/bulk-scheduler/runs', payload),
+  getRuns: () => api.get('/bulk-scheduler/runs'),
+  getOptions: () => api.get('/bulk-scheduler/options'),
+  processRun: (id: number) => api.post(`/bulk-scheduler/runs/${id}/process`),
+};
+
 export const aiApi = {
   classifyPage: (data: {
     instanceId: number;

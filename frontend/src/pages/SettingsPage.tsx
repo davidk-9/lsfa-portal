@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { settingsApi } from '../api';
 import './SettingsPage.css';
 
-type TabId = 'api' | 'course-codes' | 'trainer-portal' | 'azure-storage' | 'checklists' | 'practical-tasks' | 'success-comments' | 'ai' | 'bulk-scheduler' | 'wp-sync';
+type TabId = 'api' | 'course-codes' | 'trainer-portal' | 'azure-storage' | 'checklists' | 'practical-tasks' | 'success-comments' | 'ai' | 'wp-sync';
 
 interface Tab {
   id: TabId;
@@ -19,7 +19,6 @@ const TABS: Tab[] = [
   { id: 'practical-tasks', label: 'Practical Tasks' },
   { id: 'success-comments', label: 'Success Comments' },
   { id: 'ai', label: 'AI Evidence' },
-  { id: 'bulk-scheduler', label: 'Bulk Scheduler' },
   { id: 'wp-sync', label: 'WordPress Sync' },
 ];
 
@@ -144,9 +143,6 @@ export function SettingsPage() {
           )}
           {activeTab === 'ai' && (
             <AiSettingsTab val={val} set={set} />
-          )}
-          {activeTab === 'bulk-scheduler' && (
-            <PlaceholderTab label={TABS.find(t => t.id === activeTab)!.label} />
           )}
           {activeTab === 'wp-sync' && (
             <WpSyncTab val={val} set={set} />
@@ -1363,19 +1359,6 @@ function WpSyncTab({ val, set }: { val: (k: string) => string; set: (k: string, 
           )}
         </div>
       </SettingSection>
-    </div>
-  );
-}
-
-// ─── Placeholder tab ─────────────────────────────────────────────────────────
-
-function PlaceholderTab({ label }: { label: string }) {
-  return (
-    <div className="tab-panel">
-      <h2>{label}</h2>
-      <div className="tab-placeholder">
-        <p>This tab will be configured when the relevant feature is built.</p>
-      </div>
     </div>
   );
 }

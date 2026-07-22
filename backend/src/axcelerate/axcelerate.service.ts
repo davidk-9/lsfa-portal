@@ -208,6 +208,56 @@ export class AxcelerateService {
     };
   }
 
+  async getActiveWorkshopActivityMap(): Promise<Record<string, number>> {
+    const result = await this.get<any[]>('courses', {
+      type: 'w',
+      public: false,
+      displayLength: 100,
+    });
+
+    const map: Record<string, number> = {};
+    for (const row of Array.isArray(result) ? result : []) {
+      const isActive = row?.ISACTIVE === true || row?.ISACTIVE === 'true' || row?.ISACTIVE === 1;
+      const code = String(row?.CODE ?? '').trim().toUpperCase();
+      const id = parseInt(row?.ID ?? '0', 10);
+      if (!isActive || !code || !id) continue;
+      if (!map[code]) map[code] = id;
+    }
+    return map;
+  }
+
+  async createWorkshopFromSchedule(payload: {
+    activity_id: number;
+    name: string;
+    date: string;
+    location_id?: string | null;
+    location_name?: string;
+    start_time: string;
+    end_time: string;
+    max_participants?: number;
+    course_code?: string;
+    trainer_id?: string | null;
+    trainer_name?: string | null;
+    contact_id: number;
+  }): Promise<any> {
+    const params: Record<string, any> = {
+      ID: payload.activity_id,
+      type: 'w',
+      name: payload.name,
+      startDate: payload.date,
+      finishDate: payload.date,
+      startTime: payload.start_time,
+      finishTime: payload.end_time,
+      trainerContactID: payload.trainer_id ?? 0,
+      contactID: payload.contact_id,
+      public: 1,
+      maxParticipants: payload.max_participants ?? 0,
+      location: payload.location_name ?? '',
+    };
+
+    return this.post('course/instance', {}, params);
+  }
+
   // ── Locations ─────────────────────────────────────────────────────────────────
 
   async getLocations(): Promise<{ id: string; name: string }[]> {

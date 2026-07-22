@@ -13,6 +13,7 @@ import { AzureStorageModule } from './azure-storage/azure-storage.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { WpSyncModule } from './wp-sync/wp-sync.module';
 import { AiModule } from './ai/ai.module';
+import { BulkSchedulerModule } from './bulk-scheduler/bulk-scheduler.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { AiModule } from './ai/ai.module';
     UploadsModule,
     WpSyncModule,
     AiModule,
+    BulkSchedulerModule,
   ],
   providers: [
     {
