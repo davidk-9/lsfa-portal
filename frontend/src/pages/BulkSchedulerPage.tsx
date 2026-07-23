@@ -203,6 +203,133 @@ function ScheduleWeekView({
   );
 }
 
+function PaginationBar({
+  currentPage,
+  totalItems,
+  pageSize,
+  onPageChange,
+}: {
+  currentPage: number;
+  totalItems: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+}) {
+  const totalPages = Math.ceil(totalItems / pageSize) || 1;
+  const start = totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const end = Math.min(totalItems, currentPage * pageSize);
+
+  if (totalItems === 0) return null;
+
+  return (
+    <div className="dktp-bs-pagination">
+      <span>Showing {start} to {end} of {totalItems}</span>
+      <div className="dktp-bs-pagination-btns">
+        <button
+          type="button"
+          className="dktp-bs-page-btn"
+          disabled={currentPage <= 1}
+          onClick={() => onPageChange(currentPage - 1)}
+        >
+          &lsaquo; Prev
+        </button>
+        <span>Page {currentPage} of {totalPages}</span>
+        <button
+          type="button"
+          className="dktp-bs-page-btn"
+          disabled={currentPage >= totalPages}
+          onClick={() => onPageChange(currentPage + 1)}
+        >
+          Next &rsaquo;
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function RunsTable({
+  runs,
+  currentPage,
+  pageSize = 10,
+  onPageChange,
+}: {
+  runs: any[];
+  currentPage: number;
+  pageSize?: number;
+  onPageChange: (page: number) => void;
+}) {
+  const totalPages = Math.ceil(runs.length / pageSize) || 1;
+  const safePage = Math.min(currentPage, totalPages);
+  const pagedRuns = useMemo(() => {
+    const start = (safePage - 1) * pageSize;
+    return runs.slice(start, start + pageSize);
+  }, [runs, safePage, pageSize]);
+
+  if (runs.length === 0) {
+    return <div className="tab-description">No runs recorded yet.</div>;
+  }
+
+  return (
+    <div className="dktp-bs-table-wrap">
+      <table className="dktp-bs-table">
+        <thead>
+          <tr>
+            <th>Schedule</th>
+            <th>Date Range</th>
+            <th>Status</th>
+            <th>Progress</th>
+            <th>Details / Message</th>
+            <th>Queued</th>
+          </tr>
+        </thead>
+        <tbody>
+          {pagedRuns.map((run) => {
+            const progressPct = run.totalExpected > 0
+              ? Math.min(100, Math.round(((run.createdCount || 0) / run.totalExpected) * 100))
+              : 0;
+            const statusClass = run.status === 'completed'
+              ? 'pill-completed'
+              : run.status === 'running'
+              ? 'pill-running'
+              : run.status === 'failed'
+              ? 'pill-failed'
+              : 'pill-queued';
+
+            const createdTimeStr = run.createdAt
+              ? new Date(run.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })
+              : '-';
+
+            return (
+              <tr key={run.id}>
+                <td style={{ fontWeight: 600 }}>{run.schedule?.name ?? `Schedule #${run.scheduleId}`}</td>
+                <td>{run.startDate} &rarr; {run.endDate}</td>
+                <td>
+                  <span className={`scheduler-pill ${statusClass}`}>
+                    {run.status === 'running' ? '● Running' : run.status}
+                  </span>
+                </td>
+                <td>
+                  <span>{run.createdCount || 0} / {run.totalExpected || 0}</span>
+                  <div className="mini-progress-bg">
+                    <div className="mini-progress-fill" style={{ width: `${progressPct}%` }} />
+                  </div>
+                </td>
+                <td style={{ fontSize: 12, color: '#64748b', maxWidth: 280 }}>{run.message || 'Queued'}</td>
+                <td style={{ fontSize: 12, color: '#64748b' }}>{createdTimeStr}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <PaginationBar
+        currentPage={safePage}
+        totalItems={runs.length}
+        pageSize={pageSize}
+        onPageChange={onPageChange}
+      />
+    </div>
+  );
+}
+
 export function BulkSchedulerPage() {
   const [schedules, setSchedules] = useState<any[]>([]);
   const [runs, setRuns] = useState<any[]>([]);
@@ -214,8 +341,12 @@ export function BulkSchedulerPage() {
   const [editingItemId, setEditingItemId] = useState<number | null>(null);
   const [status, setStatus] = useState('');
   const [range, setRange] = useState({ startDate: '', endDate: '' });
-  const [confirmValue, setConfirmValue] = useState('run');
   const [options, setOptions] = useState({ courseCodes: [], locations: [], trainers: [] } as { courseCodes: OptionItem[]; locations: LocationItem[]; trainers: TrainerItem[] });
+  
+  const [step1Tab, setStep1Tab] = useState<'schedules' | 'history'>('schedules');
+  const [schedulesPage, setSchedulesPage] = useState(1);
+  const [allRunsPage, setAllRunsPage] = useState(1);
+  const [scheduleRunsPage, setScheduleRunsPage] = useState(1);
   const defaultForm = {
     day: '1',
     locationId: 'all_locations',
@@ -271,7 +402,7 @@ export function BulkSchedulerPage() {
     return expandedItems;
   }, [items, options.locations]);
 
-  const canQueueRun = Boolean(activeScheduleId && expectedRowCount > 0 && range.startDate && range.endDate && confirmValue.trim());
+  const canQueueRun = Boolean(activeScheduleId && expectedRowCount > 0 && range.startDate && range.endDate);
 
   const load = async (preferredId?: string) => {
     const [scheduleRes, runRes, optionsRes] = await Promise.all([
@@ -298,6 +429,59 @@ export function BulkSchedulerPage() {
   useEffect(() => {
     void load();
   }, []);
+
+  const hasActiveRun = useMemo(() => {
+    return runs.some((run) => run.status === 'queued' || run.status === 'running');
+  }, [runs]);
+
+  useEffect(() => {
+    if (!hasActiveRun) return;
+
+    const interval = setInterval(() => {
+      bulkSchedulerApi.getRuns().then((res) => {
+        setRuns(res.data ?? []);
+      }).catch(() => {});
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [hasActiveRun]);
+
+  const sortedSchedules = useMemo(() => {
+    return [...schedules].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }, [schedules]);
+
+  const safeSchedulesPage = Math.min(
+    schedulesPage,
+    Math.ceil(sortedSchedules.length / 10) || 1
+  );
+
+  const pagedSchedules = useMemo(() => {
+    const start = (safeSchedulesPage - 1) * 10;
+    return sortedSchedules.slice(start, start + 10);
+  }, [sortedSchedules, safeSchedulesPage]);
+
+  const activeScheduleRuns = useMemo(() => {
+    if (!activeScheduleId) return runs;
+    return runs.filter((r) => String(r.scheduleId) === String(activeScheduleId));
+  }, [runs, activeScheduleId]);
+
+  /*
+  const handleDeleteSchedule = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to delete schedule "${name}"? This cannot be undone.`)) return;
+    try {
+      await bulkSchedulerApi.deleteSchedule(Number(id));
+      if (activeScheduleId === id) {
+        setActiveScheduleId('');
+        setItems([]);
+        setScheduleName('');
+      }
+      await load();
+      setStatus(`Deleted schedule "${name}".`);
+    } catch (error: any) {
+      setStatus('Failed to delete schedule.');
+    }
+  };
+  */
 
   const handleCreateSchedule = async () => {
     const trimmedName = createName.trim();
@@ -448,16 +632,14 @@ export function BulkSchedulerPage() {
       setStatus('No schedule rows match the selected date range.');
       return;
     }
-    if (confirmValue.trim().length < 4) {
-      setStatus('Please enter confirmation text with at least 4 characters.');
-      return;
-    }
+    const confirmMessage = `Are you sure you want to queue running schedule "${scheduleName || 'this schedule'}" from ${range.startDate} to ${range.endDate} (${expectedRowCount} workshop${expectedRowCount === 1 ? '' : 's'})?`;
+    if (!window.confirm(confirmMessage)) return;
+
     try {
       const res = await bulkSchedulerApi.queueRun({
         scheduleId: Number(activeScheduleId),
         startDate: range.startDate,
         endDate: range.endDate,
-        confirmValue,
       });
       setStatus(res.data?.message ?? 'Queued scheduler run.');
       await load();
@@ -480,33 +662,108 @@ export function BulkSchedulerPage() {
             <div className="dktp-bs-panel">
               <div className="dktp-bs-panel-header compact">
                 <div>
-                  <h3>Choose a schedule</h3>
-                  <p>Create a blank schedule or open an existing one to get started.</p>
+                  <h3>Bulk Scheduler Schedules</h3>
+                  <p>Create a schedule template or choose an existing schedule to edit or run.</p>
                 </div>
               </div>
 
-              <div className="dktp-bs-card-grid">
-                <div className="dktp-bs-card dktp-bs-card-create">
-                  <h4>Create new schedule</h4>
-                  <p>Start with a blank schedule and give it a name.</p>
-                  <input className="dktp-bs-input" value={createName} onChange={(e) => setCreateName(e.target.value)} placeholder="Schedule name" />
-                  <button className="dktp-bs-card-action-btn dktp-bs-card-action-btn-secondary" onClick={handleCreateSchedule} disabled={!createName.trim()}>Create</button>
+              <div className="dktp-bs-panel" style={{ marginBottom: 16, background: '#f8fafc' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <strong style={{ fontSize: 13, color: '#0f172a', minWidth: 140 }}>Create New Schedule:</strong>
+                  <input
+                    className="dktp-bs-input"
+                    value={createName}
+                    onChange={(e) => setCreateName(e.target.value)}
+                    placeholder="Schedule name (e.g. Standard Week)"
+                    style={{ flex: 1, minWidth: 220 }}
+                  />
+                  <button
+                    className="btn-save"
+                    onClick={handleCreateSchedule}
+                    disabled={!createName.trim()}
+                  >
+                    Create Schedule
+                  </button>
                 </div>
+              </div>
 
-                {schedules.map((schedule) => (
-                  <div key={schedule.id} className="dktp-bs-card">
-                    <div className="dktp-bs-card-title-row">
-                      <h4>{schedule.name}</h4>
-                      <span className="dktp-bs-card-count">{schedule.items?.length ?? 0} workshops</span>
-                    </div>
-                    <div className="dktp-bs-card-actions">
-                      <button className="dktp-bs-card-action-btn dktp-bs-card-action-btn-success" onClick={() => void handleRunSchedule(String(schedule.id))}>Run</button>
-                      <button className="dktp-bs-card-action-btn dktp-bs-card-action-btn-warning" onClick={() => void handleEditSchedule(String(schedule.id))}>Edit</button>
-                      <button className="dktp-bs-card-action-btn dktp-bs-card-action-btn-ghost" onClick={() => void handleDuplicateSchedule(String(schedule.id))}>Duplicate</button>
-                    </div>
+              <div className="dktp-bs-subtabs">
+                <button
+                  type="button"
+                  className={`dktp-bs-subtab ${step1Tab === 'schedules' ? 'active' : ''}`}
+                  onClick={() => setStep1Tab('schedules')}
+                >
+                  Schedules ({schedules.length})
+                </button>
+                <button
+                  type="button"
+                  className={`dktp-bs-subtab ${step1Tab === 'history' ? 'active' : ''}`}
+                  onClick={() => setStep1Tab('history')}
+                >
+                  All Run History ({runs.length})
+                </button>
+              </div>
+
+              {step1Tab === 'schedules' ? (
+                sortedSchedules.length === 0 ? (
+                  <div className="tab-description">No schedules created yet. Create one above to get started.</div>
+                ) : (
+                  <div className="dktp-bs-table-wrap">
+                    <table className="dktp-bs-table">
+                      <thead>
+                        <tr>
+                          <th>Schedule Name</th>
+                          <th>Workshops</th>
+                          <th style={{ textAlign: 'right' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pagedSchedules.map((schedule) => (
+                          <tr key={schedule.id}>
+                            <td style={{ fontWeight: 600 }}>{schedule.name}</td>
+                            <td>{schedule.items?.length ?? 0} workshop rule{(schedule.items?.length ?? 0) === 1 ? '' : 's'}</td>
+                            <td style={{ textAlign: 'right' }}>
+                              <div style={{ display: 'inline-flex', gap: 6 }}>
+                                <button
+                                  className="dktp-bs-card-action-btn dktp-bs-card-action-btn-success"
+                                  onClick={() => void handleRunSchedule(String(schedule.id))}
+                                >
+                                  Run
+                                </button>
+                                <button
+                                  className="dktp-bs-card-action-btn dktp-bs-card-action-btn-warning"
+                                  onClick={() => void handleEditSchedule(String(schedule.id))}
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  className="dktp-bs-card-action-btn dktp-bs-card-action-btn-ghost"
+                                  onClick={() => void handleDuplicateSchedule(String(schedule.id))}
+                                >
+                                  Duplicate
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <PaginationBar
+                      currentPage={safeSchedulesPage}
+                      totalItems={sortedSchedules.length}
+                      pageSize={10}
+                      onPageChange={setSchedulesPage}
+                    />
                   </div>
-                ))}
-              </div>
+                )
+              ) : (
+                <RunsTable
+                  runs={runs}
+                  currentPage={allRunsPage}
+                  pageSize={10}
+                  onPageChange={setAllRunsPage}
+                />
+              )}
             </div>
           ) : null}
 
@@ -615,7 +872,7 @@ export function BulkSchedulerPage() {
                 </div>
               </div>
 
-              <div className="dktp-bs-row dktp-bs-row-form">
+              <div className="dktp-bs-row dktp-bs-row-form" style={{ marginBottom: 16 }}>
                 <div className="dktp-bs-field">
                   <label>Start</label>
                   <input className="dktp-bs-input" type="date" value={range.startDate} onChange={(e) => setRange((prev) => ({ ...prev, startDate: e.target.value }))} />
@@ -624,10 +881,6 @@ export function BulkSchedulerPage() {
                   <label>End</label>
                   <input className="dktp-bs-input" type="date" value={range.endDate} onChange={(e) => setRange((prev) => ({ ...prev, endDate: e.target.value }))} />
                 </div>
-                <div className="dktp-bs-field">
-                  <label>Confirm</label>
-                  <input className="dktp-bs-input" value={confirmValue} onChange={(e) => setConfirmValue(e.target.value)} placeholder="Type run to confirm" />
-                </div>
                 <div className="dktp-bs-summary-item">
                   <span>Expected</span>
                   <strong>{expectedRowCount} workshops</strong>
@@ -635,32 +888,25 @@ export function BulkSchedulerPage() {
                 <button className="btn-save" onClick={handleQueueRun} disabled={!canQueueRun}>Queue Run</button>
               </div>
 
-              <div className="dktp-bs-row">
-                {runs.length === 0 ? (
-                  <div className="tab-description">No runs yet.</div>
-                ) : (
-                  <div className="scheduler-grid">
-                    {runs.map((run) => (
-                      <div key={run.id} className="scheduler-card">
-                        <strong>{run.schedule?.name ?? 'Schedule'}</strong>
-                        <div className="scheduler-meta">
-                          {run.startDate} → {run.endDate}<br />
-                          Status: {run.status}<br />
-                          {run.createdCount}/{run.totalExpected} created
-                        </div>
-                        <span className="scheduler-pill">{run.message || 'Queued'}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="dktp-bs-grid">
+              <div className="dktp-bs-grid" style={{ marginBottom: 20 }}>
+                <h4 style={{ margin: '0 0 10px 0', fontSize: 14, color: '#0f172a' }}>Schedule Preview</h4>
                 {displayItems.length === 0 ? (
                   <div className="tab-description">No workshops to preview.</div>
                 ) : (
                   <ScheduleWeekView items={displayItems} editingItemId={null} readOnly />
                 )}
+              </div>
+
+              <div style={{ marginTop: 20 }}>
+                <h4 style={{ margin: '0 0 10px 0', fontSize: 14, color: '#0f172a' }}>
+                  Run History for "{scheduleName}"
+                </h4>
+                <RunsTable
+                  runs={activeScheduleRuns}
+                  currentPage={scheduleRunsPage}
+                  pageSize={5}
+                  onPageChange={setScheduleRunsPage}
+                />
               </div>
             </div>
           ) : null}

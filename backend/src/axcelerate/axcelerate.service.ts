@@ -248,12 +248,30 @@ export class AxcelerateService {
       finishDate: payload.date,
       startTime: payload.start_time,
       finishTime: payload.end_time,
-      trainerContactID: payload.trainer_id ?? 0,
-      contactID: payload.contact_id,
       public: 1,
-      maxParticipants: payload.max_participants ?? 0,
-      location: payload.location_name ?? '',
     };
+
+    if (payload.contact_id && Number(payload.contact_id) > 0) {
+      params.contactID = Number(payload.contact_id);
+    }
+
+    if (payload.trainer_id && Number(payload.trainer_id) > 0) {
+      params.trainerContactID = Number(payload.trainer_id);
+    }
+
+    if (payload.location_id && payload.location_id !== 'all_locations' && Number(payload.location_id) > 0) {
+      params.locationID = Number(payload.location_id);
+    }
+
+    if (payload.location_name) {
+      params.location = payload.location_name;
+    }
+
+    if (payload.max_participants && Number(payload.max_participants) > 0) {
+      params.maxParticipants = Number(payload.max_participants);
+    }
+
+    this.logger.log(`Creating Axcelerate workshop instance with query params: ${JSON.stringify(params)}`);
 
     return this.post('course/instance', {}, params);
   }

@@ -174,10 +174,6 @@ export class BulkSchedulerService {
       throw new Error('You can only generate workshops in the future.');
     }
 
-    if (!input.confirmValue || input.confirmValue.trim().length < 4) {
-      throw new Error('Confirmation text is required.');
-    }
-
     const expected = this.countExpectedWorkshops(schedule.items as any[], input.startDate, input.endDate);
     if (expected <= 0) {
       throw new Error('No schedule rows match the selected date range.');
@@ -239,6 +235,10 @@ export class BulkSchedulerService {
       return;
     }
 
+    if (!defaultContactId || defaultContactId <= 0) {
+      this.logger.warn('Default Axcelerate Contact ID (axcelerate_default_contact_id) is not set in Settings.');
+    }
+
     const startDate = new Date(`${run.startDate}T00:00:00`);
     const endDate = new Date(`${run.endDate}T00:00:00`);
     const created: string[] = [];
@@ -251,26 +251,52 @@ export class BulkSchedulerService {
         if (item.dayOfWeek !== dayOfWeek) continue;
         try {
           const result = await this.createWorkshopForDate(item as any, current, activityMap, courseLookup, defaultContactId);
-          if (result?.ok || result?.instanceId) {
+          if (result?.ok || result?.instanceId || result?.INSTANCEID || result?.instanceID || (result && !result.error && !result.ERROR)) {
             created.push(`${this.formatDate(current)}:${item.courseCode}`);
           } else {
-            errors.push(`${this.formatDate(current)}: ${result?.message ?? 'Unknown error'}`);
+            const errStr = result?.message || result?.ERROR || result?.error || JSON.stringify(result);
+            errors.push(`${this.formatDate(current)}: ${errStr}`);
           }
         } catch (error: any) {
-          errors.push(`${this.formatDate(current)}: ${error?.message ?? 'Unknown error'}`);
+          const respData = error?.response?.data;
+          let errMsg = error?.message ?? 'Unknown error';
+          if (respData) {
+            if (typeof respData === 'string') {
+              errMsg = respData;
+            } else if (respData.message || respData.details || respData.error || respData.MSG || respData.DETAILS) {
+              errMsg = respData.message || respData.details || respData.MSG || respData.DETAILS || respData.error;
+              if (typeof errMsg === 'object') errMsg = JSON.stringify(errMsg);
+            } else {
+              errMsg = JSON.stringify(respData);
+            }
+          }
+          this.logger.error(`Axcelerate error creating workshop on ${this.formatDate(current)}: ${errMsg}`, error.stack);
+          errors.push(`${this.formatDate(current)}: ${errMsg}`);
         }
+
+        await this.prisma.bulkSchedulerRun.update({
+          where: { id: runId },
+          data: {
+            createdCount: created.length,
+            errorCount: errors.length,
+            message: `Processing... (${created.length}/${run.totalExpected})`,
+          },
+        });
       }
       current.setDate(current.getDate() + 1);
     }
 
+    const finalStatus = created.length === 0 && errors.length > 0 ? 'failed' : 'completed';
     await this.prisma.bulkSchedulerRun.update({
       where: { id: runId },
       data: {
-        status: 'completed',
+        status: finalStatus,
         createdCount: created.length,
         errorCount: errors.length,
         finishedAt: new Date(),
-        message: errors.length ? errors.slice(0, 10).join(' | ') : 'Completed successfully.',
+        message: errors.length
+          ? `${created.length} created, ${errors.length} failed: ${errors.slice(0, 3).join('; ')}`
+          : `Completed successfully. ${created.length} workshops created.`,
       },
     });
   }
