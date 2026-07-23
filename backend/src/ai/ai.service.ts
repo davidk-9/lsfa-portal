@@ -136,30 +136,38 @@ export class AiService {
     );
   }
 
-  // Call the OpenAI Responses API for one paperwork page. Throws on failure.
+  // Call OpenAI API for one paperwork page. Throws on failure.
   private async callOpenAi(
     apiKey: string,
     model: string,
     prompt: string,
     pageImage: string,
   ): Promise<any> {
-    const payload = {
+    // 1. Try standard OpenAI Chat Completions API
+    const chatPayload = {
       model,
-      input: [
+      messages: [
         {
           role: 'user',
           content: [
-            { type: 'input_text', text: prompt },
-            { type: 'input_image', image_url: pageImage, detail: 'high' },
+            { type: 'text', text: prompt },
+            {
+              type: 'image_url',
+              image_url: {
+                url: pageImage,
+                detail: 'auto',
+              },
+            },
           ],
         },
       ],
-      max_output_tokens: 700,
+      max_completion_tokens: 700,
+      response_format: { type: 'json_object' },
     };
 
     let response;
     try {
-      response = await axios.post('https://api.openai.com/v1/responses', payload, {
+      response = await axios.post('https://api.openai.com/v1/chat/completions', chatPayload, {
         timeout: 90000,
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -171,8 +179,38 @@ export class AiService {
       throw new Error(`OpenAI request failed: ${err?.message}`);
     }
 
+    // If 404 on /v1/chat/completions, attempt legacy/custom /v1/responses endpoint
+    if (response.status === 404) {
+      const responsesPayload = {
+        model,
+        input: [
+          {
+            role: 'user',
+            content: [
+              { type: 'input_text', text: prompt },
+              { type: 'input_image', image_url: pageImage, detail: 'auto' },
+            ],
+          },
+        ],
+        max_output_tokens: 700,
+      };
+
+      try {
+        response = await axios.post('https://api.openai.com/v1/responses', responsesPayload, {
+          timeout: 90000,
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          validateStatus: () => true,
+        });
+      } catch (err: any) {
+        throw new Error(`OpenAI request failed: ${err?.message}`);
+      }
+    }
+
     if (response.status < 200 || response.status >= 300) {
-      const apiMsg = response.data?.error?.message;
+      const apiMsg = response.data?.error?.message || response.data?.message;
       throw new Error(`OpenAI returned HTTP ${response.status}${apiMsg ? `: ${apiMsg}` : ''}`);
     }
 
@@ -180,11 +218,18 @@ export class AiService {
     return this.parseJsonObjectFromText(text);
   }
 
-  // Extract text from an OpenAI Responses API response.
+  // Extract text from an OpenAI API response (Chat Completions or Responses API).
   private extractResponseText(decoded: any): string {
     if (!decoded || typeof decoded !== 'object') return '';
     if (typeof decoded.output_text === 'string') return decoded.output_text;
 
+    // Standard Chat Completions response
+    if (Array.isArray(decoded.choices) && decoded.choices[0]?.message?.content) {
+      const content = decoded.choices[0].message.content;
+      if (typeof content === 'string') return content;
+    }
+
+    // Legacy/custom Responses API format
     const parts: string[] = [];
     if (Array.isArray(decoded.output)) {
       for (const item of decoded.output) {

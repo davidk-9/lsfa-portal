@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { PDFDocument } from 'pdf-lib';
-import { aiApi, uploadsApi } from '../api';
+import { aiApi, uploadsApi, settingsApi } from '../api';
 import { useToast } from '../context/ToastContext';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -84,15 +84,20 @@ type Stage = 'processing' | 'review' | 'uploading';
 // ── PDF rendering ─────────────────────────────────────────────────────────────
 async function renderPages(
   bytes: ArrayBuffer,
+  targetWidth: number,
+  targetQuality: number,
   onProgress: (msg: string) => void,
 ): Promise<{ pageNumber: number; imageDataUrl: string }[]> {
   const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(bytes.slice(0)) }).promise;
   const out: { pageNumber: number; imageDataUrl: string }[] = [];
+  const width = Math.max(600, Math.min(3000, targetWidth || 1200));
+  const quality = Math.max(0.5, Math.min(0.95, targetQuality || 0.75));
+
   for (let n = 1; n <= pdf.numPages; n++) {
     onProgress(`Rendering page ${n} of ${pdf.numPages}...`);
     const page = await pdf.getPage(n);
     const v1 = page.getViewport({ scale: 1 });
-    const scale = Math.min(2.2, Math.max(1.4, 1700 / v1.width));
+    const scale = Math.min(2.5, Math.max(0.6, width / v1.width));
     const viewport = page.getViewport({ scale });
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d', { alpha: false })!;
@@ -101,7 +106,7 @@ async function renderPages(
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     await page.render({ canvasContext: ctx, viewport }).promise;
-    out.push({ pageNumber: n, imageDataUrl: canvas.toDataURL('image/jpeg', 0.86) });
+    out.push({ pageNumber: n, imageDataUrl: canvas.toDataURL('image/jpeg', quality) });
     canvas.width = 1;
     canvas.height = 1;
   }
@@ -152,9 +157,25 @@ export default function AiPaperworkModal({ instanceId, file, roster, onClose, on
         const arrayBuffer = await file.arrayBuffer();
         originalBytesRef.current = arrayBuffer.slice(0);
 
-        const rendered = await renderPages(arrayBuffer.slice(0), (msg) => {
-          if (!cancelled) setStatusText(msg);
-        });
+        let renderWidth = 1200;
+        let renderQuality = 0.75;
+        try {
+          const settingsRes = await settingsApi.getAll();
+          const s = settingsRes.data ?? {};
+          if (s.ai_render_width) renderWidth = parseInt(s.ai_render_width, 10) || 1200;
+          if (s.ai_render_quality) renderQuality = parseFloat(s.ai_render_quality) || 0.75;
+        } catch {
+          /* use defaults on settings load error */
+        }
+
+        const rendered = await renderPages(
+          arrayBuffer.slice(0),
+          renderWidth,
+          renderQuality,
+          (msg) => {
+            if (!cancelled) setStatusText(msg);
+          },
+        );
         if (cancelled) return;
 
         const built: AiPage[] = rendered.map((p) => ({

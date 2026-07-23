@@ -48,6 +48,8 @@ const KEYS = {
   OPENAI_API_KEY: 'openai_api_key',
   AI_MODEL_PRIMARY: 'ai_model_primary',
   AI_MODEL_FALLBACK: 'ai_model_fallback',
+  AI_RENDER_WIDTH: 'ai_render_width',
+  AI_RENDER_QUALITY: 'ai_render_quality',
   WP_SYNC_URL: 'wp_sync_url',
   WP_SYNC_TOKEN: 'wp_sync_token',
 };
@@ -563,6 +565,39 @@ function AiSettingsTab({ val, set }: { val: (k: string) => string; set: (k: stri
             onChange={(e) => set(KEYS.AI_MODEL_FALLBACK, e.target.value)}
             className="setting-input"
             placeholder="gpt-5.4-mini"
+          />
+        </SettingField>
+      </SettingSection>
+
+      <SettingSection title="PDF Rendering & Image Quality">
+        <SettingField
+          label="Target Image Width (px)"
+          hint="Width in pixels used when converting scanned PDF pages to images for AI Vision analysis. Default: 1200px (~200KB). Increase to 1600–2000px if AI struggles to read small handwritten text."
+        >
+          <input
+            type="number"
+            min="600"
+            max="3000"
+            step="100"
+            value={val(KEYS.AI_RENDER_WIDTH) || '1200'}
+            onChange={(e) => set(KEYS.AI_RENDER_WIDTH, e.target.value)}
+            className="setting-input"
+            placeholder="1200"
+          />
+        </SettingField>
+        <SettingField
+          label="JPEG Compression Quality (0.50 – 0.95)"
+          hint="Quality factor for converting rendered PDF pages to JPEG images sent to AI. Default: 0.75. Higher values keep text crisper but increase request size."
+        >
+          <input
+            type="number"
+            min="0.5"
+            max="0.95"
+            step="0.05"
+            value={val(KEYS.AI_RENDER_QUALITY) || '0.75'}
+            onChange={(e) => set(KEYS.AI_RENDER_QUALITY, e.target.value)}
+            className="setting-input"
+            placeholder="0.75"
           />
         </SettingField>
       </SettingSection>
