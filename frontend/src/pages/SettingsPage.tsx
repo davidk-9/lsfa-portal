@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import { settingsApi } from '../api';
 import './SettingsPage.css';
@@ -28,7 +28,6 @@ const KEYS = {
   API_TOKEN: 'axcelerate_api_token',
   WORKSHOP_URL: 'axcelerate_workshop_url',
   DEFAULT_CONTACT_ID: 'axcelerate_default_contact_id',
-  COURSE_CODES: 'course_code_lookup',
   STEP1: 'trainer_step1_instruction',
   STEP2: 'trainer_step2_instruction',
   STEP3_ENABLED: 'trainer_step3_instruction_enabled',
@@ -124,7 +123,7 @@ export function SettingsPage() {
             <ApiCredentialsTab val={val} set={set} />
           )}
           {activeTab === 'course-codes' && (
-            <CourseCodesTab val={val} set={set} />
+            <CourseCodesTab />
           )}
           {activeTab === 'trainer-portal' && (
             <TrainerPortalTab val={val} set={set} />
@@ -239,29 +238,280 @@ function ApiCredentialsTab({ val, set }: { val: (k: string) => string; set: (k: 
 
 // ─── Tab: Course Codes ───────────────────────────────────────────────────────
 
-function CourseCodesTab({ val, set }: { val: (k: string) => string; set: (k: string, v: string) => void }) {
+type CourseCodeItem = {
+  id: number;
+  code: string;
+  name: string;
+  shortName: string;
+  cost: number;
+  updatedAt: string;
+};
+
+function CourseCodesTab() {
+  const [items, setItems] = useState<CourseCodeItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [status, setStatus] = useState('');
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<CourseCodeItem | null>(null);
+  const [formCode, setFormCode] = useState('');
+  const [formName, setFormName] = useState('');
+  const [formShortName, setFormShortName] = useState('');
+  const [formCost, setFormCost] = useState('0');
+  const [savingModal, setSavingModal] = useState(false);
+
+  const loadCourseCodes = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await settingsApi.getCourseCodes();
+      setItems(res.data ?? []);
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? 'Failed to load course codes.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadCourseCodes();
+  }, [loadCourseCodes]);
+
+  const handleOpenAdd = () => {
+    setEditingItem(null);
+    setFormCode('');
+    setFormName('');
+    setFormShortName('');
+    setFormCost('0');
+    setModalOpen(true);
+  };
+
+  const handleOpenEdit = (item: CourseCodeItem) => {
+    setEditingItem(item);
+    setFormCode(item.code);
+    setFormName(item.name);
+    setFormShortName(item.shortName);
+    setFormCost(String(item.cost));
+    setModalOpen(true);
+  };
+
+  const handleSaveModal = async () => {
+    if (!formCode.trim()) {
+      alert('Course Code is required.');
+      return;
+    }
+    setSavingModal(true);
+    try {
+      if (editingItem) {
+        await settingsApi.updateCourseCode(editingItem.id, {
+          code: formCode.trim(),
+          name: formName.trim(),
+          shortName: formShortName.trim(),
+          cost: Number(formCost) || 0,
+        });
+        setStatus(`Updated course code "${formCode.trim()}".`);
+      } else {
+        await settingsApi.createCourseCode({
+          code: formCode.trim(),
+          name: formName.trim(),
+          shortName: formShortName.trim(),
+          cost: Number(formCost) || 0,
+        });
+        setStatus(`Created course code "${formCode.trim()}".`);
+      }
+      setModalOpen(false);
+      await loadCourseCodes();
+    } catch (err: any) {
+      alert(err?.response?.data?.message ?? 'Failed to save course code.');
+    } finally {
+      setSavingModal(false);
+    }
+  };
+
+  const handleDelete = async (item: CourseCodeItem) => {
+    if (!window.confirm(`Are you sure you want to delete course code "${item.code}"?`)) return;
+    try {
+      await settingsApi.deleteCourseCode(item.id);
+      setStatus(`Deleted course code "${item.code}".`);
+      await loadCourseCodes();
+    } catch (err: any) {
+      alert(err?.response?.data?.message ?? 'Failed to delete course code.');
+    }
+  };
+
+  const totalPages = Math.ceil(items.length / pageSize) || 1;
+  const safePage = Math.min(page, totalPages);
+  const pagedItems = useMemo(() => {
+    const start = (safePage - 1) * pageSize;
+    return items.slice(start, start + pageSize);
+  }, [items, safePage, pageSize]);
+
   return (
     <div className="tab-panel">
-      <h2>Course Code Lookup</h2>
-      <p className="tab-description">
-        Maps Axcelerate course codes to short display names used in the calendar. One entry per line in the format <code>CODE - Short Name</code>.
-      </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div>
+          <h2>Course Code Lookup</h2>
+          <p className="tab-description" style={{ marginBottom: 0 }}>
+            Manage course codes, full course names, short codes, and cost per course.
+          </p>
+        </div>
+        <button type="button" className="btn-save" onClick={handleOpenAdd}>
+          + Add Course Code
+        </button>
+      </div>
 
-      <SettingSection title="Course Codes">
-        <SettingField
-          label="Code Mappings"
-          hint='One mapping per line. Format: CODE - Short Name. Example: HLTAID011 - Provide First Aid'
-        >
-          <textarea
-            value={val(KEYS.COURSE_CODES)}
-            onChange={(e) => set(KEYS.COURSE_CODES, e.target.value)}
-            placeholder={'HLTAID011 - Provide First Aid\nHLTAID009 - Provide CPR'}
-            className="setting-textarea"
-            rows={16}
-            spellCheck={false}
-          />
-        </SettingField>
-      </SettingSection>
+      {status && <div className="settings-alert">{status}</div>}
+      {error && <div className="settings-alert" style={{ background: '#fef2f2', borderColor: '#fecaca', color: '#dc2626' }}>{error}</div>}
+
+      {loading ? (
+        <div className="tab-description">Loading course codes...</div>
+      ) : items.length === 0 ? (
+        <div className="tab-description">No course codes defined yet. Click "+ Add Course Code" to create one.</div>
+      ) : (
+        <div className="dktp-bs-table-wrap">
+          <table className="dktp-bs-table">
+            <thead>
+              <tr>
+                <th>Course Code</th>
+                <th>Course Name</th>
+                <th>Short Code</th>
+                <th>Cost ($)</th>
+                <th>Last Updated</th>
+                <th style={{ textAlign: 'right' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pagedItems.map((item) => {
+                const dateStr = item.updatedAt
+                  ? new Date(item.updatedAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })
+                  : '-';
+
+                return (
+                  <tr key={item.id}>
+                    <td style={{ fontWeight: 700, color: '#0f172a' }}>{item.code}</td>
+                    <td style={{ maxWidth: 280, wordBreak: 'break-word' }}>{item.name || '-'}</td>
+                    <td>{item.shortName || '-'}</td>
+                    <td style={{ fontWeight: 600 }}>${item.cost}</td>
+                    <td style={{ fontSize: 12, color: '#64748b' }}>{dateStr}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      <div style={{ display: 'inline-flex', gap: 6 }}>
+                        <button
+                          type="button"
+                          className="dktp-bs-card-action-btn dktp-bs-card-action-btn-warning"
+                          onClick={() => handleOpenEdit(item)}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="dktp-bs-card-action-btn dktp-bs-card-action-btn-secondary"
+                          onClick={() => void handleDelete(item)}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          <div className="dktp-bs-pagination">
+            <span>Showing {items.length === 0 ? 0 : (safePage - 1) * pageSize + 1} to {Math.min(items.length, safePage * pageSize)} of {items.length}</span>
+            <div className="dktp-bs-pagination-btns">
+              <button
+                type="button"
+                className="dktp-bs-page-btn"
+                disabled={safePage <= 1}
+                onClick={() => setPage(safePage - 1)}
+              >
+                &lsaquo; Prev
+              </button>
+              <span>Page {safePage} of {totalPages}</span>
+              <button
+                type="button"
+                className="dktp-bs-page-btn"
+                disabled={safePage >= totalPages}
+                onClick={() => setPage(safePage + 1)}
+              >
+                Next &rsaquo;
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalOpen && (
+        <div className="setting-edit-modal-overlay" onClick={() => setModalOpen(false)}>
+          <div className="setting-edit-modal" onClick={(e) => e.stopPropagation()}>
+            <h4 style={{ fontSize: 16, marginBottom: 14 }}>
+              {editingItem ? `Edit Course Code (${editingItem.code})` : 'Add New Course Code'}
+            </h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div className="dktp-bs-field">
+                <label>Course Code *</label>
+                <input
+                  className="dktp-bs-input"
+                  value={formCode}
+                  onChange={(e) => setFormCode(e.target.value)}
+                  placeholder="e.g. HLTAID011"
+                />
+              </div>
+              <div className="dktp-bs-field">
+                <label>Course Name (Full)</label>
+                <input
+                  className="dktp-bs-input"
+                  value={formName}
+                  onChange={(e) => setFormName(e.target.value)}
+                  placeholder="e.g. HLTAID011 Provide First Aid"
+                />
+              </div>
+              <div className="dktp-bs-field">
+                <label>Short Code / Display Name</label>
+                <input
+                  className="dktp-bs-input"
+                  value={formShortName}
+                  onChange={(e) => setFormShortName(e.target.value)}
+                  placeholder="e.g. Provide First Aid"
+                />
+              </div>
+              <div className="dktp-bs-field">
+                <label>Cost ($)</label>
+                <input
+                  className="dktp-bs-input"
+                  type="number"
+                  min="0"
+                  value={formCost}
+                  onChange={(e) => setFormCost(e.target.value)}
+                  placeholder="e.g. 55"
+                />
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
+              <button
+                type="button"
+                className="toggle-visibility"
+                onClick={() => setModalOpen(false)}
+                disabled={savingModal}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-save"
+                onClick={handleSaveModal}
+                disabled={savingModal || !formCode.trim()}
+              >
+                {savingModal ? 'Saving...' : 'Save Course Code'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -513,21 +763,25 @@ function ChecklistJsonTab({ val, set }: { val: (k: string) => string; set: (k: s
     setJsonError(rawChecklist && !rawChecklist.trim() ? '' : '');
   }, [rawChecklist]);
 
+  const [courseCodes, setCourseCodes] = useState<{ code: string; name: string; shortName: string }[]>([]);
+
+  useEffect(() => {
+    settingsApi.getCourseCodes().then((res) => {
+      setCourseCodes(res.data ?? []);
+    }).catch(() => {});
+  }, []);
+
   const courseOptions = useMemo(() => {
-    const lookupText = val('course_code_lookup') ?? '';
     const lookup: Record<string, string> = {};
-    lookupText.split('\n').forEach((line) => {
-      const trimmed = line.trim();
-      if (!trimmed) return;
-      const parts = trimmed.split(' - ', 2);
-      if (parts.length === 2) lookup[parts[0].trim()] = parts[1].trim();
+    courseCodes.forEach((item) => {
+      lookup[item.code] = item.shortName || item.name || item.code;
     });
 
     const codes = new Set<string>([...Object.keys(checklistData.course_map), ...Object.keys(lookup)]);
     return Array.from(codes)
       .sort()
       .map((code) => ({ code, name: lookup[code] ?? '' }));
-  }, [checklistData.course_map, val('course_code_lookup')]);
+  }, [checklistData.course_map, courseCodes]);
 
   useEffect(() => {
     if (!selectedCourse && courseOptions.length > 0) {

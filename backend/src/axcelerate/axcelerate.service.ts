@@ -236,6 +236,7 @@ export class AxcelerateService {
     end_time: string;
     max_participants?: number;
     course_code?: string;
+    cost?: number;
     trainer_id?: string | null;
     trainer_name?: string | null;
     contact_id: number;
@@ -249,7 +250,13 @@ export class AxcelerateService {
       startTime: payload.start_time,
       finishTime: payload.end_time,
       public: 1,
+      syncDateDescriptor: 1,
+      minParticipants: 1,
     };
+
+    if (payload.cost !== undefined && payload.cost !== null && !isNaN(Number(payload.cost))) {
+      params.cost = Number(payload.cost);
+    }
 
     if (payload.contact_id && Number(payload.contact_id) > 0) {
       params.contactID = Number(payload.contact_id);

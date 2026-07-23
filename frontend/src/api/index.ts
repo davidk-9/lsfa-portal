@@ -31,6 +31,12 @@ export const settingsApi = {
   getAll: () => api.get('/settings'),
   saveAll: (settings: { key: string; value: string }[]) =>
     api.put('/settings', { settings }),
+  getCourseCodes: () => api.get('/settings/course-codes'),
+  createCourseCode: (data: { code: string; name: string; shortName: string; cost: number }) =>
+    api.post('/settings/course-codes', data),
+  updateCourseCode: (id: number, data: { code?: string; name?: string; shortName?: string; cost?: number }) =>
+    api.put(`/settings/course-codes/${id}`, data),
+  deleteCourseCode: (id: number) => api.delete(`/settings/course-codes/${id}`),
 };
 
 export const workshopsApi = {

@@ -163,8 +163,7 @@ export class WorkshopsService {
     allWorkshops = await this.enrichPrivateWithVenueNames(allWorkshops);
     await this.annotateWithProgress(allWorkshops);
 
-    const courseCodeRaw = (await this.settings.get('course_code_lookup')) ?? '';
-    const courseMap = this.parseCourseCodeLookup(courseCodeRaw);
+    const courseMap = await this.settings.getCourseCodeMap();
     const todayKey = this.formatDate(today);
     const days = this.groupByDay(allWorkshops, courseMap, todayKey);
 
@@ -315,18 +314,9 @@ export class WorkshopsService {
     return workshops;
   }
 
-  private parseCourseCodeLookup(raw: string): Map<string, string> {
-    const map = new Map<string, string>();
-    for (const line of raw.split('\n')) {
-      const [code, ...rest] = line.split(' - ');
-      if (code?.trim() && rest.length) map.set(code.trim(), rest.join(' - ').trim());
-    }
-    return map;
-  }
-
   private groupByDay(
     workshops: any[],
-    courseMap: Map<string, string>,
+    courseMap: Map<string, { name: string; shortName: string; cost: number }>,
     todayKey: string,
   ): Record<string, CalendarDay> {
     const publicByDay = new Map<string, Map<string, any>>();
@@ -335,7 +325,8 @@ export class WorkshopsService {
     for (const w of workshops) {
       const dateKey = w.STARTDATE.split(' ')[0];
       const locationKey = (w.LOCATION ?? '').trim();
-      w.SHORTNAME = courseMap.get(w.CODE) ?? w.COURSENAME;
+      const match = courseMap.get(String(w.CODE ?? '').toUpperCase());
+      w.SHORTNAME = match?.shortName || match?.name || w.COURSENAME;
 
       const map = w.is_public ? publicByDay : privateByDay;
       if (!map.has(dateKey)) map.set(dateKey, new Map());

@@ -223,7 +223,7 @@ export class BulkSchedulerService {
         this.logger.warn(`Unable to load active workshop activities: ${err?.message}`);
         return null as any;
       }),
-      this.settings.get('course_code_lookup').then((raw) => this.parseCourseCodeLookup(raw ?? '')),
+      this.settings.getCourseCodeMap(),
       this.settings.get('axcelerate_default_contact_id').then((v) => parseInt(v ?? '0', 10)),
     ]);
 
@@ -309,14 +309,17 @@ export class BulkSchedulerService {
   }
 
   async getOptions() {
-    const [courseLookupRaw, locations, trainers] = await Promise.all([
-      this.settings.get('course_code_lookup'),
+    const [courseCodesList, locations, trainers] = await Promise.all([
+      this.settings.getCourseCodes(),
       this.axcelerate.getLocations().catch(() => [] as { id: string; name: string }[]),
       this.axcelerate.getTrainers().catch(() => [] as { id: string; name: string }[]),
     ]);
 
-    const courseCodes = Array.from(this.parseCourseCodeLookup(courseLookupRaw ?? '').entries())
-      .map(([value, label]) => ({ value, label }))
+    const courseCodes = courseCodesList
+      .map((item) => ({
+        value: item.code,
+        label: `${item.code} - ${item.shortName || item.name || item.code}`,
+      }))
       .sort((a, b) => a.label.localeCompare(b.label));
 
     return {
@@ -394,14 +397,15 @@ export class BulkSchedulerService {
     return parsed >= 1 && parsed <= 7 ? [parsed] : [];
   }
 
-  private async createWorkshopForDate(item: any, date: Date, activityMap: Record<string, number>, courseLookup: Map<string, string>, defaultContactId: number) {
+  private async createWorkshopForDate(item: any, date: Date, activityMap: Record<string, number>, courseLookup: Map<string, { name: string; shortName: string; cost: number }>, defaultContactId: number) {
     const courseCode = String(item.courseCode ?? '').toUpperCase();
     const activityId = activityMap[courseCode];
     if (!activityId) {
       throw new Error(`No active workshop activity ID found for course code ${courseCode}`);
     }
 
-    const shortName = courseLookup.get(courseCode) ?? courseCode;
+    const match = courseLookup.get(courseCode);
+    const shortName = match?.shortName || match?.name || courseCode;
     const timeLabel = this.formatTimeLabel(item.startTime);
     const name = `${courseCode} - ${shortName} - ${timeLabel}`;
 
@@ -415,23 +419,13 @@ export class BulkSchedulerService {
       end_time: item.endTime,
       max_participants: parseInt(item.maxParticipants ?? '0', 10),
       course_code: courseCode,
+      cost: match?.cost ?? 0,
       trainer_id: item.trainerId,
       trainer_name: item.trainerName,
       contact_id: defaultContactId,
     };
 
     return this.axcelerate.createWorkshopFromSchedule(payload);
-  }
-
-  private parseCourseCodeLookup(raw: string): Map<string, string> {
-    const map = new Map<string, string>();
-    for (const line of raw.split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      const [code, ...rest] = trimmed.split(' - ');
-      if (code?.trim() && rest.length) map.set(code.trim().toUpperCase(), rest.join(' - ').trim());
-    }
-    return map;
   }
 
   private formatTimeLabel(time: string): string {
