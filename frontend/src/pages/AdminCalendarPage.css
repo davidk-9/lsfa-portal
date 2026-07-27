@@ -204,8 +204,40 @@
   font-size: 11px;
 }
 .ws-expand-toggle { font-size: 10px; margin-left: 4px; }
+.ws-group-time-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 1px;
+}
 .ws-group-time { font-size: 10px; color: inherit; opacity: 0.8; }
-.ws-group-trainer { font-size: 10px; opacity: 0.75; margin-top: 2px; }
+.ws-group-badges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ws-badge-t {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  border: 1.5px solid #4b5563;
+  background-color: #ffffff;
+  color: #dc2626;
+  font-weight: 800;
+  font-size: 10px;
+  line-height: 1;
+  cursor: help;
+  user-select: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+.ws-group-trainer { font-size: 10px; opacity: 0.85; margin-top: 2px; }
+.ws-no-trainer-text {
+  color: #dc2626;
+  font-weight: 700;
+}
 
 /* ── Expanded workshop rows ─────────────────────────────────────────────── */
 .ws-expanded-list {

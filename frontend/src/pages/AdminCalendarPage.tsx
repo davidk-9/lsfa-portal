@@ -54,6 +54,19 @@ function GroupTile({
 
   if (!matchesLocation || !matchesTrainer) return null;
 
+  const noTrainerCount = group.workshops.filter(
+    (w) => !w.trainerName || w.trainerName.trim() === '' || w.trainerName.toLowerCase() === 'no trainer',
+  ).length;
+
+  const trainerItems: { name: string; isNoTrainer: boolean }[] = group.trainerNames.map((name) => ({
+    name,
+    isNoTrainer: name.toLowerCase() === 'no trainer',
+  }));
+
+  if (noTrainerCount > 0 && !trainerItems.some((item) => item.isNoTrainer)) {
+    trainerItems.push({ name: 'No Trainer', isNoTrainer: true });
+  }
+
   return (
     <div
       className={`ws-location-group ${STATE_CLASSES[group.state]}${group.isPrivate ? ' ws-private-group' : ''}`}
@@ -64,26 +77,62 @@ function GroupTile({
           <span>{group.isPrivate ? 'On Site' : group.location} &ndash; {group.openCount} of {group.totalCount}</span>
           <span className="ws-expand-toggle">{expanded ? '▾' : '▸'}</span>
         </div>
-        <div className="ws-group-time">{group.startTime} – {group.endTime}</div>
-        {showTrainer && group.trainerNames.length > 0 && (
-          <div className="ws-group-trainer">{group.trainerNames.join(', ')}</div>
+        <div className="ws-group-time-row">
+          <span className="ws-group-time">{group.startTime} – {group.endTime}</span>
+          <div className="ws-group-badges">
+            {noTrainerCount > 0 && (
+              <span
+                className="ws-badge-t"
+                title={`${noTrainerCount} of ${group.totalCount} workshops have No Trainer as an assigned Trainer`}
+              >
+                T
+              </span>
+            )}
+          </div>
+        </div>
+        {showTrainer && trainerItems.length > 0 && (
+          <div className="ws-group-trainer">
+            {trainerItems.map((item, index) => (
+              <span key={index}>
+                {index > 0 && ', '}
+                {item.isNoTrainer ? (
+                  <span className="ws-no-trainer-text">No Trainer</span>
+                ) : (
+                  item.name
+                )}
+              </span>
+            ))}
+          </div>
         )}
       </div>
       {expanded && (
         <div className="ws-expanded-list" onClick={(e) => e.stopPropagation()}>
-          {group.workshops.map((w) => (
-            <div
-              key={w.instanceId}
-              className={`ws-expanded-workshop ${getWorkshopClass(w)}${w.isPublic ? '' : ' ws-expanded-private'}`}
-              onClick={() => window.open(buildAxcelerateUrl(workshopBaseUrl, w.instanceId), '_blank', 'noopener')}
-              title="Open in Axcelerate"
-            >
-              <div className="ws-course-title">{w.courseCode} – {w.shortName}</div>
-              <div className="ws-time">{w.startTime} – {w.endTime}</div>
-              {w.venueContactName && <div className="ws-venue-name">Client: {w.venueContactName}</div>}
-              {showTrainer && w.trainerName && <div className="ws-trainer-name">Trainer: {w.trainerName}</div>}
-            </div>
-          ))}
+          {group.workshops.map((w) => {
+            const isNoTrainer =
+              !w.trainerName || w.trainerName.trim() === '' || w.trainerName.toLowerCase() === 'no trainer';
+            return (
+              <div
+                key={w.instanceId}
+                className={`ws-expanded-workshop ${getWorkshopClass(w)}${w.isPublic ? '' : ' ws-expanded-private'}`}
+                onClick={() => window.open(buildAxcelerateUrl(workshopBaseUrl, w.instanceId), '_blank', 'noopener')}
+                title="Open in Axcelerate"
+              >
+                <div className="ws-course-title">{w.courseCode} – {w.shortName}</div>
+                <div className="ws-time">{w.startTime} – {w.endTime}</div>
+                {w.venueContactName && <div className="ws-venue-name">Client: {w.venueContactName}</div>}
+                {showTrainer && (
+                  <div className="ws-trainer-name">
+                    Trainer:{' '}
+                    {isNoTrainer ? (
+                      <span className="ws-no-trainer-text">No Trainer</span>
+                    ) : (
+                      w.trainerName
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
