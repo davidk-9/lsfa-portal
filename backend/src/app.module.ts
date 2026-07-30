@@ -16,6 +16,7 @@ import { AiModule } from './ai/ai.module';
 import { BulkSchedulerModule } from './bulk-scheduler/bulk-scheduler.module';
 import { ContactsModule } from './contacts/contacts.module';
 import { ProfileModule } from './profile/profile.module';
+import { AddressModule } from './address/address.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { ProfileModule } from './profile/profile.module';
     BulkSchedulerModule,
     ContactsModule,
     ProfileModule,
+    AddressModule,
   ],
   providers: [
     {
