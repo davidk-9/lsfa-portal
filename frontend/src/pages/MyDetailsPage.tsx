@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
+import AsyncSelect from 'react-select/async';
 import { useToast } from '../context/ToastContext';
 import { contactsApi } from '../api';
+import axios from 'axios';
 
 type Tab = 'personal' | 'avetmiss' | 'declarations';
 
@@ -54,6 +56,9 @@ export function MyDetailsPage() {
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
+  // Address UI State Toggle
+  const [manualAddress, setManualAddress] = useState(false);
+
   const [formData, setFormData] = useState<any>({});
 
   useEffect(() => {
@@ -101,6 +106,46 @@ export function MyDetailsPage() {
     } finally {
       setSyncing(false);
     }
+  };
+
+  const loadAddressOptions = async (inputValue: string) => {
+    if (inputValue.length < 3) return [];
+    try {
+      const response = await axios.get(`http://localhost:3000/api/address/search?q=${encodeURIComponent(inputValue)}`);
+      return response.data.map((address: any) => ({
+        label: address.addressLabel,
+        value: address
+      }));
+    } catch (err) {
+      console.error('Failed to parse address core', err);
+      return [];
+    }
+  };
+
+  const handleAddressSelect = (selectedOption: any) => {
+    if (!selectedOption) return;
+    const addr = selectedOption.value;
+    
+    const streetLabel = [addr.streetName, addr.streetType].filter(Boolean).join(' ');
+
+    setFormData((prev: any) => ({ 
+      ...prev, 
+      // Main Address
+      address1: streetLabel,
+      city: addr.localityName,
+      state: addr.state,
+      postcode: addr.postcode,
+      country: 'Australia',
+
+      // Postal Address / SAddress
+      sAddress1: streetLabel,
+      sCity: addr.localityName,
+      sState: addr.state,
+      sPostcode: addr.postcode,
+      sCountry: 'Australia'
+    }));
+    
+    toast.success('Address populated automatically!');
   };
 
   if (loading) {
@@ -202,33 +247,79 @@ export function MyDetailsPage() {
                 </div>
               </div>
 
-              <h3 style={sectionTitleStyle}>Residential Address</h3>
-              <div style={gridStyle}>
-                <div>
-                  <label style={labelStyle}>Building Name / Unit No.</label>
-                  <input style={inputStyle} value={formData.unitNo || ''} onChange={(e) => handleChange('unitNo', e.target.value)} />
+              <h3 style={sectionTitleStyle}>
+                Residential Address
+                <button 
+                  type="button" 
+                  onClick={() => setManualAddress(!manualAddress)} 
+                  style={{
+                    marginLeft: 12, 
+                    fontSize: 12, 
+                    padding: '2px 8px', 
+                    cursor: 'pointer', 
+                    background: '#f1f5f9', 
+                    border: '1px solid #cbd5e1', 
+                    borderRadius: 4
+                  }}
+                >
+                  {manualAddress ? "Use Autocomplete UI" : "Enter Manually"}
+                </button>
+              </h3>
+              
+              {!manualAddress ? (
+                <div style={{ marginBottom: 20 }}>
+                  <label style={labelStyle}>Search Geocoded Address (Powered by G-NAF)</label>
+                  <AsyncSelect
+                    cacheOptions
+                    defaultOptions={false}
+                    loadOptions={loadAddressOptions}
+                    onChange={handleAddressSelect}
+                    placeholder="Start typing your address (e.g., 200 Fake St)..."
+                    noOptionsMessage={({ inputValue }) => !inputValue ? "Type to search" : "No addresses found"}
+                    styles={{
+                      control: (base) => ({
+                        ...base,
+                        borderColor: '#cbd5e1',
+                        padding: '2px',
+                        boxShadow: 'none',
+                        '&:hover': {
+                          borderColor: '#94a3b8',
+                        }
+                      })
+                    }}
+                  />
+                  <p style={{ fontSize: 12, color: '#64748b', marginTop: 8 }}>
+                    Selecting an address automatically syncs identical details to your postal address profile.
+                  </p>
                 </div>
-                <div>
-                  <label style={labelStyle}>Street Number & Name</label>
-                  <input style={inputStyle} value={formData.address1 || ''} onChange={(e) => handleChange('address1', e.target.value)} placeholder="24 Peridot Cres" />
+              ) : (
+                <div style={gridStyle}>
+                  <div>
+                    <label style={labelStyle}>Building Name / Unit No.</label>
+                    <input style={inputStyle} value={formData.unitNo || ''} onChange={(e) => handleChange('unitNo', e.target.value)} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Street Number & Name</label>
+                    <input style={inputStyle} value={formData.address1 || ''} onChange={(e) => handleChange('address1', e.target.value)} placeholder="24 Peridot Cres" />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Suburb / City</label>
+                    <input style={inputStyle} value={formData.city || ''} onChange={(e) => handleChange('city', e.target.value)} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>State</label>
+                    <input style={inputStyle} value={formData.state || ''} onChange={(e) => handleChange('state', e.target.value)} placeholder="QLD" />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Postcode</label>
+                    <input style={inputStyle} value={formData.postcode || ''} onChange={(e) => handleChange('postcode', e.target.value)} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Country</label>
+                    <input style={inputStyle} value={formData.country || ''} onChange={(e) => handleChange('country', e.target.value)} placeholder="Australia" />
+                  </div>
                 </div>
-                <div>
-                  <label style={labelStyle}>Suburb / City</label>
-                  <input style={inputStyle} value={formData.city || ''} onChange={(e) => handleChange('city', e.target.value)} />
-                </div>
-                <div>
-                  <label style={labelStyle}>State</label>
-                  <input style={inputStyle} value={formData.state || ''} onChange={(e) => handleChange('state', e.target.value)} placeholder="QLD" />
-                </div>
-                <div>
-                  <label style={labelStyle}>Postcode</label>
-                  <input style={inputStyle} value={formData.postcode || ''} onChange={(e) => handleChange('postcode', e.target.value)} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Country</label>
-                  <input style={inputStyle} value={formData.country || ''} onChange={(e) => handleChange('country', e.target.value)} placeholder="Australia" />
-                </div>
-              </div>
+              )}
 
               <h3 style={sectionTitleStyle}>Emergency Contact Information</h3>
               <div style={gridStyle}>
