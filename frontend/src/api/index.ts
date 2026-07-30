@@ -101,3 +101,17 @@ export const aiApi = {
     roster: { contact_id: number; name: string }[];
   }) => api.post('/ai/classify-page', data),
 };
+export const profileApi = {
+  getProfile: () => api.get('/profile/me'),
+  updateProfile: (data: { name?: string; email?: string; axcelerateContactId?: string }) =>
+    api.patch('/profile/me', data),
+  changePassword: (data: { newPassword: string }) =>
+    api.post('/profile/change-password', data),
+};
+
+export const contactsApi = {
+  getMyContact: () => api.get('/contacts/me'),
+  updateMyContact: (data: any) => api.patch('/contacts/me', data),
+  syncAxcelerate: (axcelerateContactId?: number) =>
+    api.post('/contacts/sync-axcelerate', { axcelerateContactId }),
+};

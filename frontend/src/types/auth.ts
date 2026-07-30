@@ -1,4 +1,4 @@
-export type Role = 'SUPER_USER' | 'ADMIN' | 'TRAINER';
+export type Role = 'SUPER_USER' | 'ADMIN' | 'TRAINER' | 'STUDENT';
 
 export interface AuthUser {
   id: number;

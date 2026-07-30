@@ -191,6 +191,19 @@ export class AxcelerateService {
     }
   }
 
+  async getContactsBatch(offset: number, limit: number): Promise<any[]> {
+    try {
+      const result = await this.get('contacts/search', {
+        offset,
+        displayLength: limit,
+      });
+      return Array.isArray(result) ? result : [];
+    } catch (err: any) {
+      this.logger.error(`Failed to fetch contacts batch (offset: ${offset}, limit: ${limit}): ${err?.message}`);
+      throw err;
+    }
+  }
+
   async lookupContactByEmail(email: string): Promise<{ contactId: string; contactName: string }> {
     const result = await this.get<any[]>('contacts/search', { emailAddress: email });
 

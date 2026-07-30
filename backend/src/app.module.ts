@@ -14,6 +14,8 @@ import { UploadsModule } from './uploads/uploads.module';
 import { WpSyncModule } from './wp-sync/wp-sync.module';
 import { AiModule } from './ai/ai.module';
 import { BulkSchedulerModule } from './bulk-scheduler/bulk-scheduler.module';
+import { ContactsModule } from './contacts/contacts.module';
+import { ProfileModule } from './profile/profile.module';
 
 @Module({
   imports: [
@@ -30,6 +32,8 @@ import { BulkSchedulerModule } from './bulk-scheduler/bulk-scheduler.module';
     WpSyncModule,
     AiModule,
     BulkSchedulerModule,
+    ContactsModule,
+    ProfileModule,
   ],
   providers: [
     {

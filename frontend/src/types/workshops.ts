@@ -18,6 +18,7 @@ export interface WorkshopDetail {
   isPast: boolean;
   isPublic: boolean;
   progressComplete: boolean;
+  status: string;
 }
 
 export interface WorkshopGroup {

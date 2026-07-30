@@ -78,6 +78,26 @@ function SchedulerIcon() {
   );
 }
 
+function MyDetailsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="16" y1="13" x2="8" y2="13" />
+      <line x1="16" y1="17" x2="8" y2="17" />
+    </svg>
+  );
+}
+
+function ProfileIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
+    </svg>
+  );
+}
+
 function LogoutIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -123,6 +143,7 @@ export function AppLayout() {
   };
 
   const isSuperOrAdmin = user?.role === 'SUPER_USER' || user?.role === 'ADMIN';
+  const isTrainerOrAbove = user?.role === 'SUPER_USER' || user?.role === 'ADMIN' || user?.role === 'TRAINER';
   const isSuperUser = user?.role === 'SUPER_USER';
 
   return (
@@ -167,11 +188,15 @@ export function AppLayout() {
                 </>
               )}
 
-              <div className="nav-section-label">{collapsed ? 'TRN' : 'Trainer'}</div>
-              <NavLink to="/my-calendar" className={({ isActive }) => getSidebarLinkClassName(isActive, collapsed)} title="My Calendar">
-                <span className="nav-link-icon"><MyCalendarIcon /></span>
-                {!collapsed && <span className="nav-link-label">My Calendar</span>}
-              </NavLink>
+              {isTrainerOrAbove && (
+                <>
+                  <div className="nav-section-label">{collapsed ? 'TRN' : 'Trainer'}</div>
+                  <NavLink to="/my-calendar" className={({ isActive }) => getSidebarLinkClassName(isActive, collapsed)} title="My Calendar">
+                    <span className="nav-link-icon"><MyCalendarIcon /></span>
+                    {!collapsed && <span className="nav-link-label">My Calendar</span>}
+                  </NavLink>
+                </>
+              )}
 
               {isSuperUser && (
                 <>
@@ -190,6 +215,16 @@ export function AppLayout() {
                   </NavLink>
                 </>
               )}
+
+              <div className="nav-section-label">{collapsed ? 'ACC' : 'My Account'}</div>
+              <NavLink to="/my-details" className={({ isActive }) => getSidebarLinkClassName(isActive, collapsed)} title="My Student Details">
+                <span className="nav-link-icon"><MyDetailsIcon /></span>
+                {!collapsed && <span className="nav-link-label">My Student Details</span>}
+              </NavLink>
+              <NavLink to="/profile" className={({ isActive }) => getSidebarLinkClassName(isActive, collapsed)} title="User Profile">
+                <span className="nav-link-icon"><ProfileIcon /></span>
+                {!collapsed && <span className="nav-link-label">User Profile</span>}
+              </NavLink>
             </nav>
 
             <div className="sidebar-footer">

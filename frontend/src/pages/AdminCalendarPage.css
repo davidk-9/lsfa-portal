@@ -233,6 +233,23 @@
   user-select: none;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
+.ws-badge-m {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 3px;
+  border: 1.5px solid #4b5563;
+  background-color: #ffffff;
+  color: #ea580c;
+  font-weight: 800;
+  font-size: 11px;
+  line-height: 1;
+  cursor: help;
+  user-select: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
 .ws-group-trainer { font-size: 10px; opacity: 0.85; margin-top: 2px; }
 .ws-no-trainer-text {
   color: #dc2626;
@@ -262,6 +279,7 @@
 .ws-expanded-past-incomplete { background: #fecaca; border-color: #f87171; color: #7f1d1d; }
 .ws-expanded-past-complete   { background: #ffffff; border-color: #d1d5db; color: #111827; }
 .ws-expanded-past            { background: #e5e7eb; border-color: #9ca3af; color: #4b5563; }
+.ws-expanded-tentative       { background: #ffedd5; border-color: #f97316; color: #9a3412; }
 
 .ws-course-title { font-weight: 600; }
 .ws-time         { opacity: 0.8; }

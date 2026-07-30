@@ -1,9 +1,12 @@
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { AiService } from './ai.service';
 import { ClassifyPageDto } from './dto/classify-page.dto';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('SUPER_USER', 'ADMIN', 'TRAINER')
 @Controller('ai')
 export class AiController {
   constructor(private ai: AiService) {}

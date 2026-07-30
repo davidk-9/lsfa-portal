@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import { settingsApi } from '../api';
 import './SettingsPage.css';
+import api from '../api/client';
 
 type TabId = 'api' | 'course-codes' | 'trainer-portal' | 'azure-storage' | 'checklists' | 'practical-tasks' | 'success-comments' | 'ai' | 'wp-sync';
 
@@ -1648,7 +1649,89 @@ function WpSyncTab({ val, set }: { val: (k: string) => string; set: (k: string, 
           )}
         </div>
       </SettingSection>
+
+      <AxcelerateSyncSection />
     </div>
+  );
+}
+
+function AxcelerateSyncSection() {
+  const [syncing, setSyncing] = useState(false);
+  const [status, setStatus] = useState<any>(null);
+
+  useEffect(() => {
+    let interval: any;
+    if (syncing) {
+      interval = setInterval(async () => {
+        try {
+          const res = await api.get('/contacts/bulk-sync/status');
+          setStatus(res.data);
+          if (!res.data.isSyncing) {
+            setSyncing(false);
+            clearInterval(interval);
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [syncing]);
+
+  const startSync = async () => {
+    try {
+      await api.post('/contacts/bulk-sync');
+      setSyncing(true);
+      setStatus({ total: 0, current: 0, imported: 0, isSyncing: true, errors: [] });
+    } catch (e) {
+      alert('Failed to start sync');
+    }
+  };
+
+  return (
+    <SettingSection title="Axcelerate Contacts Bulk Sync">
+      <div style={{ padding: '16px' }}>
+        <p style={{ fontSize: 13, color: '#475569', marginBottom: 12 }}>
+          Triggers a bulk fetch and upsert of ALL contacts from the Axcelerate database into lsfa-central database.
+          This may take several minutes depending on the total record count. Existing local records will be overwritten.
+        </p>
+
+        <button
+          className="btn-save"
+          onClick={startSync}
+          disabled={syncing}
+          style={{ marginBottom: 16 }}
+        >
+          {syncing ? '⟳ Syncing...' : 'Start Full Contacts Sync'}
+        </button>
+
+        {status && (
+           <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: '12px 16px', marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, fontSize: 13, fontFamily: 'monospace' }}>
+                <span style={{ width: 190, color: '#334155', flexShrink: 0 }}>Axcelerate.Contacts</span>
+                <div style={{ flex: 1, background: '#e2e8f0', borderRadius: 4, height: 8, overflow: 'hidden' }}>
+                    <div style={{ width: `${status.total > 0 ? (status.current / status.total) * 100 : 0}%`, background: !status.isSyncing ? '#16a34a' : '#3b82f6', height: '100%', transition: 'width 0.3s' }} />
+                </div>
+                <span style={{ color: '#64748b', width: 100, textAlign: 'right', flexShrink: 0 }}>
+                    {status.current.toLocaleString()}/{status.total.toLocaleString()}
+                </span>
+                <span style={{ color: '#475569', width: 80, flexShrink: 0 }}>
+                    {status.imported.toLocaleString()} mapped
+                </span>
+              </div>
+              {status.errors && status.errors.length > 0 && (
+                <div style={{ marginTop: 10, color: '#92400e', fontSize: 12 }}>
+                  <strong>Warnings ({status.errors.length}):</strong>
+                  <ul style={{ margin: '4px 0 0 16px', maxHeight: '100px', overflowY: 'auto' }}>
+                    {status.errors.slice(0, 10).map((e: string, i: number) => <li key={i}>{e}</li>)}
+                    {status.errors.length > 10 && <li>...and {status.errors.length - 10} more errors.</li>}
+                  </ul>
+                </div>
+              )}
+           </div>
+        )}
+      </div>
+    </SettingSection>
   );
 }
 

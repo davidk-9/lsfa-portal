@@ -23,6 +23,7 @@ export interface WorkshopDetail {
   isPast: boolean;
   isPublic: boolean;
   progressComplete: boolean;
+  status: string;
 }
 
 export interface WorkshopGroup {
@@ -201,6 +202,7 @@ export class WorkshopsService {
           LOCATION: w.LOCATION ?? w.location ?? '',
           COURSENAME: w.COURSENAME ?? w.courseName ?? '',
           PARTICIPANTS: parseInt(w.PARTICIPANTS ?? '0') || 0,
+          STATUS: w.STATUS ?? w.status ?? 'Active',
           is_past: isPast,
           is_public: isPublic,
           is_open: isEnrolmentOpen,
@@ -407,10 +409,11 @@ export class WorkshopsService {
         participants: w.PARTICIPANTS,
         trainerId: String(w.TRAINERCONTACTID ?? ''),
         trainerName: w.TRAINER_NAME ?? '',
-          venueContactName: w.VENUE_CONTACT_NAME ?? '',
+        venueContactName: w.VENUE_CONTACT_NAME ?? '',
         isPast: w.is_past,
         isPublic: w.is_public,
         progressComplete: w.progress_complete ?? false,
+        status: String(w.STATUS ?? w.status ?? 'Active').trim(),
       }));
 
     return {

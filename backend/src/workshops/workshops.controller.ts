@@ -1,8 +1,11 @@
 import { Controller, Get, Query, UseGuards, ParseIntPipe, DefaultValuePipe } from '@nestjs/common';
 import { WorkshopsService } from './workshops.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('SUPER_USER', 'ADMIN', 'TRAINER')
 @Controller('workshops')
 export class WorkshopsController {
   constructor(private workshopsService: WorkshopsService) {}

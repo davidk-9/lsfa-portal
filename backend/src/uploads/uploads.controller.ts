@@ -6,6 +6,8 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { randomBytes } from 'crypto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { AzureStorageService } from '../azure-storage/azure-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AxcelerateService } from '../axcelerate/axcelerate.service';
@@ -16,7 +18,8 @@ const PT = { IMAGE: 51766, SD: 51767, IF: 51768, CHECKLIST: null as null };
 
 type UploadKind = 'image' | 'sd' | 'if' | 'checklist' | 'workshop';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('SUPER_USER', 'ADMIN', 'TRAINER')
 @Controller('uploads')
 export class UploadsController {
   private readonly logger = new Logger(UploadsController.name);

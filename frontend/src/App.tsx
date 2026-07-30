@@ -12,6 +12,8 @@ import { UsersPage } from './pages/UsersPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { BulkSchedulerPage } from './pages/BulkSchedulerPage';
 import { WorkshopDetailPage } from './pages/WorkshopDetailPage';
+import { UserProfilePage } from './pages/UserProfilePage';
+import { MyDetailsPage } from './pages/MyDetailsPage';
 
 function App() {
   return (
@@ -30,6 +32,8 @@ function App() {
           >
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<DashboardPage />} />
+            <Route path="profile" element={<UserProfilePage />} />
+            <Route path="my-details" element={<MyDetailsPage />} />
             <Route
               path="admin-calendar"
               element={
@@ -46,8 +50,22 @@ function App() {
                 </ProtectedRoute>
               }
             />
-            <Route path="my-calendar" element={<MyCalendarPage />} />
-            <Route path="workshop/:instanceId" element={<WorkshopDetailPage />} />
+            <Route
+              path="my-calendar"
+              element={
+                <ProtectedRoute allowedRoles={['SUPER_USER', 'ADMIN', 'TRAINER']}>
+                  <MyCalendarPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="workshop/:instanceId"
+              element={
+                <ProtectedRoute allowedRoles={['SUPER_USER', 'ADMIN', 'TRAINER']}>
+                  <WorkshopDetailPage />
+                </ProtectedRoute>
+              }
+            />
             <Route
               path="users"
               element={

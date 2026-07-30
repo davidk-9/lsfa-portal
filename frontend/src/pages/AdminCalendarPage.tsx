@@ -27,6 +27,8 @@ const STATE_CLASSES: Record<WorkshopState, string> = {
 };
 
 function getWorkshopClass(w: WorkshopDetail): string {
+  const status = (w.status || '').toLowerCase();
+  if (status === 'tentative' || status === 'cancelled') return 'ws-expanded-tentative';
   if (!w.isPast) return w.participants > 0 ? 'ws-expanded-future' : 'ws-expanded-future-empty';
   if (w.participants > 0) return w.progressComplete ? 'ws-expanded-past-complete' : 'ws-expanded-past-incomplete';
   return 'ws-expanded-past';
@@ -58,6 +60,11 @@ function GroupTile({
     (w) => !w.trainerName || w.trainerName.trim() === '' || w.trainerName.toLowerCase() === 'no trainer',
   ).length;
 
+  const tentativeCount = group.workshops.filter((w) => {
+    const s = (w.status || '').toLowerCase();
+    return s === 'tentative' || s === 'cancelled';
+  }).length;
+
   const trainerItems: { name: string; isNoTrainer: boolean }[] = group.trainerNames.map((name) => ({
     name,
     isNoTrainer: name.toLowerCase() === 'no trainer',
@@ -88,6 +95,14 @@ function GroupTile({
                 T
               </span>
             )}
+            {tentativeCount > 0 && (
+              <span
+                className="ws-badge-m"
+                title={`${tentativeCount} of ${group.totalCount} workshops are marked as Tentative or Cancelled`}
+              >
+                !
+              </span>
+            )}
           </div>
         </div>
         {showTrainer && trainerItems.length > 0 && (
@@ -110,6 +125,7 @@ function GroupTile({
           {group.workshops.map((w) => {
             const isNoTrainer =
               !w.trainerName || w.trainerName.trim() === '' || w.trainerName.toLowerCase() === 'no trainer';
+            const statusLower = (w.status || '').toLowerCase();
             return (
               <div
                 key={w.instanceId}
@@ -117,7 +133,10 @@ function GroupTile({
                 onClick={() => window.open(buildAxcelerateUrl(workshopBaseUrl, w.instanceId), '_blank', 'noopener')}
                 title="Open in Axcelerate"
               >
-                <div className="ws-course-title">{w.courseCode} – {w.shortName}</div>
+                <div className="ws-course-title">
+                  {w.courseCode} – {w.shortName}
+                  {statusLower === 'tentative' ? ' (T)' : statusLower === 'cancelled' ? ' (C)' : ''}
+                </div>
                 <div className="ws-time">{w.startTime} – {w.endTime}</div>
                 {w.venueContactName && <div className="ws-venue-name">Client: {w.venueContactName}</div>}
                 {showTrainer && (
@@ -235,6 +254,7 @@ export function AdminCalendarPage() {
         <span className="legend-swatch ws-group-incomplete-past">Past — incomplete</span>
         <span className="legend-swatch ws-group-complete-past">Past — complete</span>
         <span className="legend-swatch ws-group-closed">Past — no students</span>
+        <span className="legend-swatch ws-expanded-tentative">Tentative / Cancelled</span>
         <span className="legend-swatch ws-private-indicator">Blue outline = On Site</span>
       </div>
 

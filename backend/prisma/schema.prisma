@@ -11,6 +11,7 @@ enum Role {
   SUPER_USER
   ADMIN
   TRAINER
+  STUDENT
 }
 
 model User {
@@ -27,6 +28,10 @@ model User {
 
   // Axcelerate link (for trainers)
   axcelerateContactId String?
+
+  // Local Contact link
+  contactId     Int?      @unique
+  contact       Contact?  @relation(fields: [contactId], references: [id])
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -161,4 +166,154 @@ model BulkSchedulerRun {
 
   @@index([scheduleId])
   @@index([status])
+}
+
+model Contact {
+  id                               Int      @id @default(autoincrement())
+  contactId                        Int      @unique
+  user                             User?
+
+  givenName                        String?
+  title                            String?
+  middleName                       String?
+  preferredName                    String?
+  surname                          String?
+  emailAddress                     String?
+  emailAddressAlternative          String?
+  sex                              String?
+  dob                              String?
+
+  historicClientId                 String?
+  optionalId                       String?
+  usi                              String?
+  usiVerified                      Boolean?
+  usiExemption                     Boolean?
+  vsn                              String?
+  lui                              String?
+  workReadyParticipantNumber       String?
+  saceStudentId                    String?
+
+  position                         String?
+  section                          String?
+  division                         String?
+  organisation                     String?
+  orgId                            Int?
+  orgIds                           String[] @default([])
+
+  buildingName                     String?
+  unitNo                           String?
+  streetNo                         String?
+  streetName                       String?
+  poBox                            String?
+  address1                         String?
+  address2                         String?
+  city                             String?
+  state                            String?
+  postcode                         String?
+  countryId                        Int?
+  country                          String?
+
+  sBuildingName                    String?
+  sUnitNo                          String?
+  sStreetNo                        String?
+  sStreetName                      String?
+  sPoBox                           String?
+  sAddress1                        String?
+  sAddress2                        String?
+  sCity                            String?
+  sState                           String?
+  sPostcode                        String?
+  sCountryId                       Int?
+  sCountry                         String?
+
+  phone                            String?
+  mobilePhone                      String?
+  workPhone                        String?
+  fax                              String?
+  sourceCodeId                     Int?
+  source                           String?
+  comment                          String?
+  website                          String?
+
+  citizenStatusId                  Int?
+  citizenStatusName                String?
+  fkResidencyStatusId              Int?
+  fkResidencyStatusName            String?
+  countryOfBirthId                 Int?
+  countryOfBirthName               String?
+  cityOfBirth                      String?
+  countryOfCitizenId               Int?
+  countryOfCitizenName             String?
+
+  indigenousStatusId               Int?
+  indigenousStatusName             String?
+  mainLanguageId                   Int?
+  mainLanguageName                 String?
+  englishProficiencyId             Int?
+  englishAssistanceFlag            Boolean?
+
+  highestSchoolLevelId             Int?
+  highestSchoolLevelYear           String?
+  currentSchoolLevel               Int?
+  atSchoolFlag                     Boolean?
+  atSchoolName                     String?
+
+  priorEducationIds                String[] @default([])
+  priorEducationNames              String[] @default([])
+  priorEducationStatus             Boolean?
+
+  disabilityFlag                   Boolean?
+  disabilityTypeIds                String[] @default([])
+  disabilityTypeNames              String[] @default([])
+
+  labourForceId                    Int?
+  labourForceName                  String?
+  anzscoCode                       String?
+  anzsicCode                       String?
+  ielts                            String?
+  surveyContactStatusCode          String?
+
+  emergencyContact                 String?
+  emergencyContactRelation         String?
+  emergencyContactPhone            String?
+
+  employerContactId                Int?
+  payerContactId                   Int?
+  supervisorContactId              Int?
+  coachContactId                   Int?
+  agentContactId                   Int?
+  contactRoleId                    Int?
+
+  yearOfArrivalAus                 String?
+
+  customFieldAdditionalSupport           String?
+  customFieldAdditionalSupportRequired   String?
+  customFieldParentGuardianContactNumber String?
+  customFieldEmployer                    String?
+  customFieldJobTitle                    String?
+  customFieldCJobTitle                   String?
+  customFieldCombinedDeclaration         String?
+  customFieldDeclarations                String[] @default([])
+  customFieldParentGuardianEmail         String?
+  customFieldCanPerformCpr2Mins          String?
+  customFieldPrecourseWork               String?
+  customFieldMarketingPermission         String?
+  customFieldParentGuardianFullName      String?
+  customFieldUsiPermission               String?
+  customFieldPreviousJobTitles           String[] @default([])
+  customFieldPreviousJobTitlesOther      String?
+  customFieldPreviousCerts               String[] @default([])
+  customFieldParentGuardianRelationship  String?
+  customFieldWellbeingRequirements       String?
+
+  lastUpdated                      String?
+  contactEntryDate                 String?
+  contactActive                    Boolean? @default(true)
+  photo                            String?
+
+  createdAt                        DateTime @default(now())
+  updatedAt                        DateTime @updatedAt
+
+  @@index([emailAddress])
+  @@index([surname, givenName])
 }

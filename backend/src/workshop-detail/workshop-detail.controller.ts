@@ -5,8 +5,11 @@ import {
 import { WorkshopDetailService } from './workshop-detail.service';
 import { MarkAttendanceDto, SaveChecklistDto, SaveProgressDto, WizardSaveDto } from './dto/workshop-detail.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('SUPER_USER', 'ADMIN', 'TRAINER')
 @Controller('workshop-detail')
 export class WorkshopDetailController {
   constructor(private service: WorkshopDetailService) {}

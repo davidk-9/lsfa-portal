@@ -244,6 +244,7 @@ export function UsersPage() {
                     <option value="SUPER_USER">Super User</option>
                     <option value="ADMIN">Admin</option>
                     <option value="TRAINER">Trainer</option>
+                    <option value="STUDENT">Student</option>
                   </select>
                 </label>
 
@@ -282,4 +283,4 @@ const dangerButton: React.CSSProperties = { background: '#dc2626', color: '#fff'
 const errorBox: React.CSSProperties = { background: '#fee2e2', color: '#991b1b', padding: '10px 12px', borderRadius: 6, marginBottom: 16 };
 const modalOverlay: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, zIndex: 1000 };
 const modalCard: React.CSSProperties = { background: '#fff', width: '100%', maxWidth: 560, borderRadius: 12, padding: 24, boxShadow: '0 12px 40px rgba(0,0,0,0.2)' };
-const roleColor = (role: string) => ({ SUPER_USER: '#7c3aed', ADMIN: '#2563eb', TRAINER: '#0891b2' }[role] ?? '#64748b');
+const roleColor = (role: string) => ({ SUPER_USER: '#7c3aed', ADMIN: '#2563eb', TRAINER: '#0891b2', STUDENT: '#059669' }[role] ?? '#64748b');
