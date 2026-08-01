@@ -179,6 +179,14 @@ export class AxcelerateService {
     return this.putEnrolmentCustomField(instanceId, contactId, 'customField_u_obschecklist', checklistUrl);
   }
 
+  async updateContact(contactId: number, params: Record<string, any>): Promise<any> {
+    const client = await this.getClient();
+    const url = `contact/${contactId}`;
+    this.logger.log(`Updating Axcelerate contact ${contactId} via PUT ${url} with params: ${Object.keys(params).join(', ')}`);
+    const res = await client.put(url, {}, { params });
+    return res.data;
+  }
+
   // ── Contacts (cached per request cycle by caller) ────────────────────────────
 
   async getContactDetail(contactId: number): Promise<any> {

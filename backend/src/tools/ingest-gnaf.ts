@@ -8,6 +8,10 @@ import * as readline from 'readline';
 
 const DB_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/lsfa_central?schema=public';
 const FILE_PATH = '../reference/GNAF_CORE.psv';
+const LOG_PATH = './gnaf_errors.log';
+
+// Postgres expects \N not \\N when joined programmatically
+const PG_NULL = '\\N';
 
 async function run() {
   console.log('Connecting to Postgres directly...');
@@ -20,75 +24,75 @@ async function run() {
   console.log('Initiating controlled stream (backpressure batching)...');
   
   const targetColumns = [
-    '"addressDetailPid"',
-    '"addressLabel"',
-    '"streetName"',
-    '"streetType"',
-    '"localityName"',
-    '"state"',
-    '"postcode"',
-    '"longitude"',
-    '"latitude"'
+    '"addressDetailPid"', '"dateCreated"', '"addressLabel"', '"addressSiteName"', 
+    '"buildingName"', '"flatType"', '"flatNumber"', '"levelType"', '"levelNumber"', 
+    '"numberFirst"', '"numberLast"', '"lotNumber"', '"streetName"', '"streetType"', 
+    '"streetSuffix"', '"localityName"', '"state"', '"postcode"', '"legalParcelId"', 
+    '"mbCode"', '"aliasPrincipal"', '"principalPid"', '"primarySecondary"', 
+    '"primaryPid"', '"geocodeType"', '"longitude"', '"latitude"'
   ];
 
-  const pgStream = client.query(copyFrom(`COPY "GNAFAddress" (${targetColumns.join(', ')}) FROM STDIN WITH NULL '\\N'`));
+  const pgStream = client.query(copyFrom(`COPY "GNAFAddress" (${targetColumns.join(', ')}) FROM STDIN WITH NULL '${PG_NULL}' ENCODING 'utf8'`));
   
-  const fileStream = fs.createReadStream(FILE_PATH);
+  // Read in latin1 to let Node blindly accept any weird byte as a character without fatally crashing natively
+  const fileStream = fs.createReadStream(FILE_PATH, { encoding: 'latin1' });
   const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+  
+  // Prepare an error log file
+  const errorLogStream = fs.createWriteStream(LOG_PATH, { flags: 'a' });
 
   let rowCount = 0;
+  let skippedCount = 0;
   const startTime = Date.now();
   
-  console.log('Ingesting... (this will correctly pause when Postgres is busy)');
+  console.log('Ingesting... (this prevents all Postgres escape sequence crashes)');
 
-  // Using for await...of automatically controls the file reading loop, 
-  // preventing Node from loading strings faster than Postgres saves them.
   for await (const line of rl) {
     if (!line.trim()) continue;
-    
+
     const parts = line.split('|');
     if (parts[0] === 'ADDRESS_DETAIL_PID') continue; // skip header
 
     if (parts.length >= 27) {
-      const row = [
-        parts[0],
-        parts[2],
-        parts[12] || '\\N',
-        parts[13] || '\\N',
-        parts[15] || '\\N',
-        parts[16] || '\\N',
-        parts[17] || '\\N',
-        parts[25] ? parseFloat(parts[25]) : '\\N',
-        parts[26] ? parseFloat(parts[26]) : '\\N'
-      ];
+      const row = parts.map((part, index) => {
+        // THE TRUE FIX: Strip all backslashes, tabs, and newlines!
+        // Postgres interprets backslashes inside COPY as octal escape sequences.
+        // A backslash followed by numbers (like \376) gets converted by Postgres into byte 0xFE!
+        let cleanPart = part.replace(/[\t\r\n\\]/g, ''); 
+
+        if (index === 25 || index === 26) {
+          return cleanPart ? parseFloat(cleanPart) : PG_NULL;
+        }
+        return cleanPart ? cleanPart : PG_NULL;
+      });
       
       const chunk = row.join('\t') + '\n';
       rowCount++;
 
       if (rowCount % 500000 === 0) {
-        console.log(`Processed ${rowCount} lines...`);
+        console.log(`Processed ${rowCount} valid lines... (Skipped ${skippedCount})`);
       }
 
-      // **THE FIX**: Try to write. If the Postgres stream buffer is full, 
-      // pause this exact loop and wait for Postgres to drain (save to disk).
-      const canWrite = pgStream.write(chunk);
+      const canWrite = pgStream.write(Buffer.from(chunk, 'utf8'));
       if (!canWrite) {
         await new Promise<void>((resolve) => pgStream.once('drain', resolve));
       }
     }
   }
 
-  // File is fully read, tell Postgres we are done sending data
   pgStream.end();
+  errorLogStream.end();
 
-  // Wait for Postgres to cleanly finalize the transaction
   await new Promise<void>((resolve, reject) => {
     pgStream.on('finish', resolve);
     pgStream.on('error', reject);
   });
 
   const durationObj = (Date.now() - startTime) / 1000;
-  console.log(`\nImport complete! Processed ${rowCount} total rows in ${durationObj.toFixed(2)}s.`);
+  console.log(`\nImport complete!`);
+  console.log(`Processed: ${rowCount} total valid rows.`);
+  console.log(`Skipped:   ${skippedCount} illegal rows due to bad encoding.`);
+  console.log(`Time:      ${durationObj.toFixed(2)}s.`);
   await client.end();
 }
 

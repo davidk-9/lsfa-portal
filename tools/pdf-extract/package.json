@@ -4,6 +4,8 @@
   "private": true,
   "dependencies": {
     "pdf-parse": "^2.4.5",
-    "pdfjs-dist": "^6.1.200"
+    "pdfjs-dist": "^3.11.174",
+    "textract": "^2.5.0",
+    "xlsx": "^0.18.5"
   }
 }

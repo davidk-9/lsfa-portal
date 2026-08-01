@@ -1,4 +1,4 @@
-const fs = require('fs');
+﻿const fs = require('fs');
 const path = require('path');
 const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
 
@@ -11,21 +11,17 @@ async function extract(input, output) {
     const page = await doc.getPage(i);
     const content = await page.getTextContent();
     const strings = content.items.map((item) => item.str);
-    text += strings.join(' ') + '\n\n';
+    text += strings.join('\n') + '\n\n';
   }
   fs.writeFileSync(output, text, 'utf8');
   console.log('Wrote', output);
 }
 
-(async () => {
-  const base = path.resolve(__dirname, '..');
-  const files = [
-    ['reference/dk-kleinschmidt.pdf', 'dk-kleinschmidt-pdfjs.txt'],
-    ['reference/Checklist_Document__DK_Kleinschmidt__14501972.pdf', 'Checklist_Document__DK_Kleinschmidt__14501972-pdfjs.txt']
-  ].map(([a, b]) => [path.resolve(base, a), path.resolve(__dirname, b)]);
+const inputPath = process.argv[2];
+if (!inputPath) {
+    console.error("No input file provided");
+    process.exit(1);
+}
+const outputPath = inputPath.replace('.pdf', '.txt');
 
-  for (const [inp, out] of files) {
-    console.log('Extracting', inp);
-    await extract(inp, out);
-  }
-})();
+extract(inputPath, outputPath).catch(console.error);

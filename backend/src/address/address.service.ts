@@ -20,7 +20,12 @@ export class AddressService {
     const results = await this.prisma.$queryRaw`
       SELECT 
         "addressDetailPid", 
-        "addressLabel", 
+        "addressLabel",
+        "buildingName",
+        "flatType",
+        "flatNumber",
+        "numberFirst",
+        "numberLast", 
         "streetName", 
         "streetType", 
         "localityName", 

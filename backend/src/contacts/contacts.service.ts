@@ -52,7 +52,7 @@ export class ContactsService {
     }
 
     // Create a local fallback Contact record
-    const dummyContactId = 9000000 + userId;
+    const dummyContactId = 900000000 + userId;
     const newContact = await this.prisma.contact.create({
       data: {
         contactId: dummyContactId,
@@ -73,17 +73,69 @@ export class ContactsService {
   async updateContactForUser(userId: number, updateData: any) {
     const contact = await this.getContactForUser(userId);
 
-    // Sanitize non-updatable structural fields
+    this.logger.log(`Updating contact id ${contact.id} for user ${userId}. Received fields: ${Object.keys(updateData).join(', ')}`);
+
+    // Sanitize non-updatable structural fields & relations
     delete updateData.id;
     delete updateData.contactId;
     delete updateData.userId;
     delete updateData.createdAt;
     delete updateData.updatedAt;
+    delete updateData.user;
 
-    return this.prisma.contact.update({
-      where: { id: contact.id },
-      data: updateData,
-    });
+    // Convert string numeric IDs back to integers or null if empty
+    const intFields = [
+      'countryId', 'sCountryId', 'sourceCodeId', 'citizenStatusId', 'fkResidencyStatusId',
+      'countryOfBirthId', 'countryOfCitizenId', 'indigenousStatusId', 'mainLanguageId',
+      'englishProficiencyId', 'highestSchoolLevelId', 'currentSchoolLevel', 'labourForceId',
+      'employerContactId', 'payerContactId', 'supervisorContactId', 'coachContactId',
+      'agentContactId', 'contactRoleId', 'orgId'
+    ];
+
+    for (const field of intFields) {
+      if (field in updateData) {
+        if (updateData[field] === '' || updateData[field] === null || updateData[field] === undefined) {
+          updateData[field] = null;
+        } else if (typeof updateData[field] === 'string' && !isNaN(Number(updateData[field]))) {
+          updateData[field] = parseInt(updateData[field], 10);
+        }
+      }
+    }
+
+    // Ensure studyReasonId stays as string (Prisma schema has String?)
+    if ('studyReasonId' in updateData && updateData.studyReasonId != null) {
+      updateData.studyReasonId = String(updateData.studyReasonId);
+    }
+
+    try {
+      const updatedLocal = await this.prisma.contact.update({
+        where: { id: contact.id },
+        data: updateData,
+      });
+
+      const axId = Number(contact.contactId);
+      this.logger.log(`Local update complete for contact id ${contact.id} (contactId ${contact.contactId} / parsed ${axId}). Pushing to Axcelerate...`);
+
+      // Best-effort push to Axcelerate if contactId is a valid positive number
+      // Dummy local IDs are explicitly created in getContactForUser as 900000000 + userId
+      if (axId && axId > 0 && axId < 900000000) {
+        try {
+          const axParams = mapContactDataToAxcelerateParams(updatedLocal);
+          this.logger.log(`Axcelerate params generated for contactId ${axId}: ${JSON.stringify(axParams)}`);
+          const axRes = await this.axcelerate.updateContact(axId, axParams);
+          this.logger.log(`Axcelerate update response for ${axId}: ${JSON.stringify(axRes)}`);
+        } catch (axErr: any) {
+          this.logger.error(`Failed to push contact update to Axcelerate for contactId ${axId}: ${axErr.message}`, axErr.stack);
+        }
+      } else {
+        this.logger.warn(`Skipping Axcelerate push for contactId ${contact.contactId} (not a valid Axcelerate ID)`);
+      }
+
+      return updatedLocal;
+    } catch (err: any) {
+      this.logger.error(`Error updating contact ${contact.id}: ${err.message}`, err.stack);
+      throw new BadRequestException(`Failed to update contact: ${err.message}`);
+    }
   }
 
   async syncAxcelerateForUser(userId: number, targetAxcelerateContactId?: number) {
@@ -207,6 +259,79 @@ export class ContactsService {
       this.isBulkSyncing = false;
     }
   }
+}
+
+function mapContactDataToAxcelerateParams(c: any): Record<string, any> {
+  const params: Record<string, any> = {};
+
+  if (c.givenName) params.givenName = c.givenName;
+  if (c.surname) params.surname = c.surname;
+  if (c.middleName) params.middleName = c.middleName;
+  if (c.title) params.title = c.title;
+  if (c.emailAddress) params.emailAddress = c.emailAddress;
+  if (c.emailAddressAlternative) params.EmailAddressAlternative = c.emailAddressAlternative;
+  if (c.sex) params.sex = c.sex;
+  if (c.dob) params.dob = c.dob;
+
+  if (c.phone) params.phone = c.phone;
+  if (c.mobilePhone) params.mobilephone = c.mobilePhone;
+  if (c.workPhone) params.workphone = c.workPhone;
+
+  if (c.usi) params.USI = c.usi;
+  if (c.historicClientId) params.HistoricClientID = c.historicClientId;
+  if (c.vsn) params.VSN = c.vsn;
+  if (c.lui) params.LUI = c.lui;
+
+  // AVETMISS 7.0 Residential Address
+  if (c.unitNo) params.sunitNo = c.unitNo;
+  if (c.buildingName) params.sbuildingName = c.buildingName;
+  if (c.address1) params.saddress1 = c.address1;
+  if (c.address2) params.saddress2 = c.address2;
+  if (c.city) params.scity = c.city;
+  if (c.state) params.sstate = c.state;
+  if (c.postcode) params.spostcode = c.postcode;
+  if (c.countryId) params.scountryID = c.countryId;
+  if (c.country) params.scountry = c.country;
+
+  // Postal Address
+  if (c.unitNo) params.unitNo = c.unitNo;
+  if (c.buildingName) params.buildingName = c.buildingName;
+  if (c.address1) params.address1 = c.address1;
+  if (c.address2) params.address2 = c.address2;
+  if (c.city) params.city = c.city;
+  if (c.state) params.state = c.state;
+  if (c.postcode) params.postcode = c.postcode;
+  if (c.countryId) params.countryID = c.countryId;
+  if (c.country) params.country = c.country;
+
+  // Background & AVETMISS
+  if (c.countryOfBirthId) params.CountryofBirthID = c.countryOfBirthId;
+  if (c.countryOfCitizenId) params.CountryofCitizenID = c.countryOfCitizenId;
+  if (c.citizenStatusId) params.CitizenStatusID = c.citizenStatusId;
+  if (c.indigenousStatusId) params.IndigenousStatusID = c.indigenousStatusId;
+  if (c.mainLanguageId) params.MainLanguageID = c.mainLanguageId;
+  if (c.englishProficiencyId) params.EnglishProficiencyID = c.englishProficiencyId;
+  if (c.englishAssistanceFlag != null) params.EnglishAssistanceFlag = c.englishAssistanceFlag;
+
+  if (c.highestSchoolLevelId) params.HighestSchoolLevelID = c.highestSchoolLevelId;
+  if (c.highestSchoolLevelYear) params.HighestSchoolLevelYear = c.highestSchoolLevelYear;
+  if (c.labourForceId) params.LabourForceID = c.labourForceId;
+
+  if (c.priorEducationStatus != null) params.PriorEducationStatus = c.priorEducationStatus;
+  if (Array.isArray(c.priorEducationIds) && c.priorEducationIds.length > 0) {
+    params.PriorEducationIDs = c.priorEducationIds.join(',');
+  }
+
+  if (c.disabilityFlag != null) params.DisabilityFlag = c.disabilityFlag;
+  if (Array.isArray(c.disabilityTypeIds) && c.disabilityTypeIds.length > 0) {
+    params.DisabilityTypeIDs = c.disabilityTypeIds.join(',');
+  }
+
+  if (c.emergencyContact) params.EmergencyContact = c.emergencyContact;
+  if (c.emergencyContactRelation) params.EmergencyContactRelation = c.emergencyContactRelation;
+  if (c.emergencyContactPhone) params.EmergencyContactPhone = c.emergencyContactPhone;
+
+  return params;
 }
 
 function mapAxceleratePayloadToContactData(raw: any) {
