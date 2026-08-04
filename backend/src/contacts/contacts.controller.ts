@@ -1,4 +1,5 @@
-import { Controller, Get, Patch, Post, Body, Request, UseGuards } from '@nestjs/common';
+import { Controller, Get, Patch, Post, Body, Request, UseGuards, Sse, MessageEvent, BadRequestException } from '@nestjs/common';
+import { Observable, Subject } from 'rxjs';
 import { ContactsService } from './contacts.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -39,10 +40,24 @@ export class ContactsController {
   }
 
   @UseGuards(RolesGuard)
+  @Roles('SUPER_USER')
+  @Sse('sync-users-usi-stream')
+  streamSyncUsersWithVerifiedUsi(): Observable<MessageEvent> {
+    const subject = new Subject<MessageEvent>();
+    this.contactsService
+      .syncUsersWithVerifiedUsiStream((event) => subject.next({ data: event }))
+      .finally(() => subject.complete());
+    return subject.asObservable();
+  }
+
+  @UseGuards(RolesGuard)
   @Roles('SUPER_USER', 'ADMIN')
   @Get(':id')
   getContactById(@Request() req) {
     const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) {
+      throw new BadRequestException('Invalid contact ID parameter');
+    }
     return this.contactsService.getContactById(id);
   }
 

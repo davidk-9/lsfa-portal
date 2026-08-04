@@ -315,6 +315,9 @@ export class ContactsService {
   }
 
   async getContactById(id: number) {
+    if (!id || isNaN(id)) {
+      throw new BadRequestException('A valid numeric contact ID must be provided');
+    }
     const contact = await this.prisma.contact.findUnique({
       where: { id },
       include: {
@@ -507,6 +510,140 @@ export class ContactsService {
         temporaryPassword: rawPassword,
       },
     };
+  }
+
+  async syncUsersWithVerifiedUsiStream(onEvent: (event: any) => void) {
+    this.logger.log('Starting verified USI contact-to-user stream sync routine...');
+
+    // First count total matching verified contacts
+    const totalVerifiedContacts = await this.prisma.contact.count({
+      where: {
+        usiVerified: true,
+        emailAddress: { not: '' },
+      },
+    });
+
+    onEvent({
+      type: 'start',
+      totalVerifiedContacts,
+    });
+
+    let processedCount = 0;
+    let linkedExistingCount = 0;
+    let createdCount = 0;
+    let skippedAlreadyLinkedCount = 0;
+    const conflicts: Array<{ contactId: number; email: string; userAlreadyLinkedToContactId: number; reason: string }> = [];
+
+    const bcrypt = await import('bcrypt');
+    const chunkSize = 100;
+
+    for (let skip = 0; skip < totalVerifiedContacts; skip += chunkSize) {
+      // Fetch a chunk of 100 contacts with select to keep memory minimal
+      const chunk = await this.prisma.contact.findMany({
+        where: {
+          usiVerified: true,
+          emailAddress: { not: '' },
+        },
+        skip,
+        take: chunkSize,
+        orderBy: { id: 'asc' },
+        select: {
+          id: true,
+          contactId: true,
+          givenName: true,
+          surname: true,
+          emailAddress: true,
+          user: {
+            select: { id: true },
+          },
+        },
+      });
+
+      for (const contact of chunk) {
+        processedCount++;
+        if (!contact.emailAddress) continue;
+        const email = contact.emailAddress.trim().toLowerCase();
+
+        // Case: Contact is already linked to a user account
+        if (contact.user) {
+          skippedAlreadyLinkedCount++;
+          continue;
+        }
+
+        // Check if a user with this email address already exists
+        const existingUser = await this.prisma.user.findUnique({
+          where: { email },
+          select: { id: true, contactId: true, axcelerateContactId: true },
+        });
+
+        if (existingUser) {
+          // If that existing user is ALREADY linked to another contact, log conflict and skip
+          if (existingUser.contactId && existingUser.contactId !== contact.id) {
+            conflicts.push({
+              contactId: contact.id,
+              email,
+              userAlreadyLinkedToContactId: existingUser.contactId,
+              reason: `User ${email} (ID: ${existingUser.id}) is already linked to Contact ID ${existingUser.contactId}. Cannot link to Contact ID ${contact.id}.`,
+            });
+            continue;
+          }
+
+          // Link existing user to this contact
+          await this.prisma.user.update({
+            where: { id: existingUser.id },
+            data: {
+              contactId: contact.id,
+              axcelerateContactId: contact.contactId < 900000000 ? String(contact.contactId) : existingUser.axcelerateContactId,
+            },
+          });
+          linkedExistingCount++;
+        } else {
+          // Create new STUDENT role user account
+          const name = [contact.givenName, contact.surname].filter(Boolean).join(' ') || 'Student User';
+          const rawPassword = 'LSFA' + Math.floor(100000 + Math.random() * 900000);
+          const passwordHash = await bcrypt.hash(rawPassword, 10);
+
+          await this.prisma.user.create({
+            data: {
+              email,
+              name,
+              passwordHash,
+              role: 'STUDENT',
+              isActive: true,
+              contactId: contact.id,
+              axcelerateContactId: contact.contactId < 900000000 ? String(contact.contactId) : null,
+            },
+          });
+          createdCount++;
+        }
+      }
+
+      // Emit progress after each chunk of 100
+      onEvent({
+        type: 'progress',
+        totalVerifiedContacts,
+        processedCount,
+        linkedExistingCount,
+        createdCount,
+        skippedAlreadyLinkedCount,
+        conflictCount: conflicts.length,
+      });
+    }
+
+    this.logger.log(`Verified USI stream sync finished: ${processedCount} processed, ${linkedExistingCount} linked to existing users, ${createdCount} created, ${skippedAlreadyLinkedCount} already linked, ${conflicts.length} conflicts.`);
+
+    onEvent({
+      type: 'complete',
+      summary: {
+        totalVerifiedContacts,
+        processedCount,
+        linkedExistingCount,
+        createdCount,
+        skippedAlreadyLinkedCount,
+        conflictCount: conflicts.length,
+      },
+      conflicts,
+    });
   }
 
   async syncUsersWithVerifiedUsi() {

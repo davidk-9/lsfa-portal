@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import type { ReactNode } from 'react';
-import { settingsApi, contactsApi } from '../api';
+import { settingsApi } from '../api';
 import './SettingsPage.css';
 import api from '../api/client';
 
@@ -1743,8 +1743,15 @@ function AxcelerateSyncSection() {
 
 function ContactUserSyncTab() {
   const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState<{
+    totalVerifiedContacts: number;
+    processedCount: number;
+    linkedExistingCount: number;
+    createdCount: number;
+    skippedAlreadyLinkedCount: number;
+    conflictCount: number;
+  } | null>(null);
   const [result, setResult] = useState<{
-    success: boolean;
     summary: {
       totalVerifiedContacts: number;
       processedCount: number;
@@ -1761,25 +1768,105 @@ function ContactUserSyncTab() {
     }>;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
 
   const handleRunSync = async () => {
     if (!confirm('Run USI Verified Contact-to-User Sync? This will create or link user accounts for contacts with verified USIs.')) {
       return;
     }
 
+    abortRef.current?.abort();
     setRunning(true);
     setError(null);
+    setProgress(null);
     setResult(null);
 
+    const token = localStorage.getItem('token');
+    const baseURL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3000/api';
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
     try {
-      const res = await contactsApi.syncUsersWithVerifiedUsi();
-      setResult(res.data);
+      const response = await fetch(`${baseURL}/contacts/sync-users-usi-stream`, {
+        headers: { Authorization: `Bearer ${token ?? ''}` },
+        signal: ctrl.signal,
+      });
+
+      if (!response.ok) throw new Error(`Server returned ${response.status}`);
+
+      const reader = response.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop()!;
+
+        for (const part of parts) {
+          for (const line of part.split('\n')) {
+            if (!line.startsWith('data: ')) continue;
+            try {
+              const event = JSON.parse(line.slice(6));
+              if (event.type === 'start') {
+                setProgress({
+                  totalVerifiedContacts: event.totalVerifiedContacts,
+                  processedCount: 0,
+                  linkedExistingCount: 0,
+                  createdCount: 0,
+                  skippedAlreadyLinkedCount: 0,
+                  conflictCount: 0,
+                });
+              } else if (event.type === 'progress') {
+                setProgress({
+                  totalVerifiedContacts: event.totalVerifiedContacts,
+                  processedCount: event.processedCount,
+                  linkedExistingCount: event.linkedExistingCount,
+                  createdCount: event.createdCount,
+                  skippedAlreadyLinkedCount: event.skippedAlreadyLinkedCount,
+                  conflictCount: event.conflictCount,
+                });
+              } else if (event.type === 'complete') {
+                setResult({
+                  summary: event.summary,
+                  conflicts: event.conflicts,
+                });
+                setProgress({
+                  totalVerifiedContacts: event.summary.totalVerifiedContacts,
+                  processedCount: event.summary.processedCount,
+                  linkedExistingCount: event.summary.linkedExistingCount,
+                  createdCount: event.summary.createdCount,
+                  skippedAlreadyLinkedCount: event.summary.skippedAlreadyLinkedCount,
+                  conflictCount: event.summary.conflictCount,
+                });
+              }
+            } catch {
+              // Ignore malformed JSON frame
+            }
+          }
+        }
+      }
     } catch (err: any) {
-      setError(err?.response?.data?.message || err?.message || 'Failed to execute contact-to-user sync');
+      if (err.name !== 'AbortError') {
+        setError(err.message || 'Failed to execute contact-to-user sync stream');
+      }
     } finally {
       setRunning(false);
     }
   };
+
+  const pct = progress && progress.totalVerifiedContacts > 0
+    ? Math.min(100, Math.round((progress.processedCount / progress.totalVerifiedContacts) * 100))
+    : 0;
 
   return (
     <div className="tab-panel">
@@ -1795,15 +1882,17 @@ function ContactUserSyncTab() {
             <br />
             1. Finds contacts where <code>USI Verified</code> is checked and an email is set.
             <br />
-            2. If the contact is already linked to a user account, it skips it.
+            2. Processes in chunked batches of 100 contacts to optimize memory performance.
             <br />
-            3. Searches if a user account with that email exists:
+            3. If the contact is already linked to a user account, it skips it.
+            <br />
+            4. Searches if a user account with that email exists:
             <br />
             &nbsp;&nbsp;&bull; If a user exists and is unlinked, it links them.
             <br />
             &nbsp;&nbsp;&bull; If a user exists but is ALREADY linked to another contact, it logs a conflict for investigation.
             <br />
-            4. If no user exists, it creates a new <code>STUDENT</code> user account for that contact with a temporary password and links them.
+            5. If no user exists, it creates a new <code>STUDENT</code> user account for that contact with a temporary password and links them.
           </p>
 
           <button
@@ -1824,8 +1913,28 @@ function ContactUserSyncTab() {
               gap: 8,
             }}
           >
-            {running ? 'Running Sync Routine...' : 'Run Contact-to-User Sync'}
+            {running ? '⟳ Running Chunked Sync...' : 'Run Contact-to-User Sync'}
           </button>
+
+          {running && progress && (
+            <div style={{ marginTop: 20, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: '#334155' }}>
+                  Processing Contacts: {progress.processedCount.toLocaleString()} / {progress.totalVerifiedContacts.toLocaleString()}
+                </span>
+                <span style={{ fontSize: 14, fontWeight: 700, color: '#2563eb' }}>{pct}%</span>
+              </div>
+              <div style={{ background: '#e2e8f0', borderRadius: 4, height: 12, overflow: 'hidden', marginBottom: 12 }}>
+                <div style={{ width: `${pct}%`, background: '#2563eb', height: '100%', transition: 'width 0.3s ease' }} />
+              </div>
+              <div style={{ display: 'flex', gap: 16, fontSize: 13, color: '#64748b' }}>
+                <span>Linked Existing: <strong style={{ color: '#2563eb' }}>{progress.linkedExistingCount}</strong></span>
+                <span>Created New: <strong style={{ color: '#16a34a' }}>{progress.createdCount}</strong></span>
+                <span>Skipped: <strong style={{ color: '#64748b' }}>{progress.skippedAlreadyLinkedCount}</strong></span>
+                <span>Conflicts: <strong style={{ color: progress.conflictCount > 0 ? '#dc2626' : '#16a34a' }}>{progress.conflictCount}</strong></span>
+              </div>
+            </div>
+          )}
 
           {error && (
             <div style={{ marginTop: 16, padding: 12, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 6, color: '#991b1b', fontSize: 14 }}>
