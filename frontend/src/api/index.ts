@@ -1,11 +1,17 @@
 import api from './client';
 
 export const authApi = {
-  login: (email: string, password: string) =>
-    api.post('/auth/login', { email, password }),
+  login: (email: string, password: string, deviceToken?: string) =>
+    api.post('/auth/login', { email, password, deviceToken }),
 
-  verifyMfa: (email: string, code: string) =>
-    api.post('/auth/verify-mfa', { email, code }),
+  verifyMfa: (email: string, code: string, trustDevice?: boolean) =>
+    api.post('/auth/verify-mfa', { email, code, trustDevice }),
+
+  forgotPassword: (email: string) =>
+    api.post('/auth/forgot-password', { email }),
+
+  resetPassword: (token: string, mfaCode: string, newPassword: string) =>
+    api.post('/auth/reset-password', { token, mfaCode, newPassword }),
 
   me: () => api.get('/auth/me'),
 

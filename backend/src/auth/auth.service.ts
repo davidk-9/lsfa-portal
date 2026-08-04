@@ -6,6 +6,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Resend } from 'resend';
@@ -26,19 +27,32 @@ export class AuthService {
     this.resend = key ? new Resend(key) : null;
   }
 
-  async login(email: string, password: string) {
+  async login(email: string, password: string, deviceToken?: string) {
     const user = await this.usersService.findByEmail(email);
     if (!user || !user.isActive) throw new UnauthorizedException('Invalid credentials');
 
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) throw new UnauthorizedException('Invalid credentials');
 
-    // All roles require MFA
+    // Check trusted device
+    if (deviceToken) {
+      const trusted = await this.prisma.trustedDevice.findUnique({
+        where: { deviceKey: deviceToken },
+      });
+
+      if (trusted && trusted.userId === user.id && trusted.expiresAt > new Date()) {
+        // Device is trusted — skip MFA and issue token directly
+        const tokenResult = await this.issueToken(user.id, user.email, user.role);
+        return { requiresMfa: false, ...tokenResult };
+      }
+    }
+
+    // Require MFA
     await this.sendMfaCode(user);
     return { requiresMfa: true, email: user.email };
   }
 
-  async verifyMfa(email: string, code: string) {
+  async verifyMfa(email: string, code: string, trustDevice?: boolean) {
     const user = await this.usersService.findByEmail(email);
     if (!user) throw new UnauthorizedException('Invalid credentials');
 
@@ -57,6 +71,116 @@ export class AuthService {
       data: { mfaCode: null, mfaExpiresAt: null },
     });
 
+    let newDeviceToken: string | undefined;
+
+    // Create trusted device if requested
+    if (trustDevice) {
+      newDeviceToken = crypto.randomBytes(32).toString('hex');
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
+      await this.prisma.trustedDevice.create({
+        data: {
+          userId: user.id,
+          deviceKey: newDeviceToken,
+          expiresAt,
+        },
+      });
+    }
+
+    const tokenResult = await this.issueToken(user.id, user.email, user.role);
+    return {
+      ...tokenResult,
+      deviceToken: newDeviceToken,
+    };
+  }
+
+  async forgotPassword(email: string) {
+    const user = await this.usersService.findByEmail(email);
+    // Always return success message even if email doesn't exist for security
+    if (!user || !user.isActive) {
+      return { message: 'If your email exists in our system, you will receive a reset email.' };
+    }
+
+    // Generate reset token and MFA code
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetExpiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour token
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const mfaExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        resetPasswordToken: resetToken,
+        resetPasswordExpiresAt: resetExpiresAt,
+        mfaCode: code,
+        mfaExpiresAt: mfaExpiresAt,
+      },
+    });
+
+    const publicBaseUrl = this.config.get<string>('PUBLIC_BASE_URL') || 'http://localhost:5173';
+    const resetLink = `${publicBaseUrl.replace(/\/+$/, '')}/reset-password?token=${resetToken}&email=${encodeURIComponent(user.email)}`;
+    const fromEmail = this.config.get<string>('RESEND_FROM_EMAIL') || 'noreply@eml.klefen.com.au';
+
+    if (this.resend) {
+      await this.resend.emails.send({
+        from: fromEmail,
+        to: user.email,
+        subject: 'Reset your LSFA Central password',
+        html: `
+          <p>Hi ${user.name},</p>
+          <p>You requested to reset your password for LSFA Central.</p>
+          <p>Click the link below to open the password reset page:</p>
+          <p><a href="${resetLink}" style="padding: 10px 18px; background-color: #E30613; color: white; text-decoration: none; border-radius: 6px; display: inline-block;">Reset Password</a></p>
+          <p>Your verification code for the reset page is:</p>
+          <h2 style="letter-spacing: 0.3em;">${code}</h2>
+          <p>This code and link expire in 60 minutes.</p>
+          <p>If you did not request this, please ignore this email.</p>
+        `,
+      });
+    } else {
+      console.log(`[DEV] Password reset for ${user.email}: token=${resetToken}, code=${code}`);
+      console.log(`[DEV] Reset link: ${resetLink}`);
+    }
+
+    return { message: 'If your email exists in our system, you will receive a reset email.' };
+  }
+
+  async resetPassword(token: string, mfaCode: string, newPassword: string) {
+    const user = await this.prisma.user.findFirst({
+      where: {
+        resetPasswordToken: token,
+        resetPasswordExpiresAt: { gt: new Date() },
+      },
+    });
+
+    if (!user) {
+      throw new BadRequestException('Invalid or expired reset token');
+    }
+
+    if (
+      !user.mfaCode ||
+      !user.mfaExpiresAt ||
+      user.mfaCode !== mfaCode ||
+      user.mfaExpiresAt < new Date()
+    ) {
+      throw new BadRequestException('Invalid or expired verification code');
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    // Update password, clear reset token & MFA code
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        resetPasswordToken: null,
+        resetPasswordExpiresAt: null,
+        mfaCode: null,
+        mfaExpiresAt: null,
+      },
+    });
+
+    // Auto log in user
     return this.issueToken(user.id, user.email, user.role);
   }
 

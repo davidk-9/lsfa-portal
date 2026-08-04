@@ -13,7 +13,7 @@ interface AuthContextType {
   impersonation: ImpersonationInfo | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<{ requiresMfa: boolean; email: string }>;
-  verifyMfa: (email: string, code: string) => Promise<void>;
+  verifyMfa: (email: string, code: string, trustDevice?: boolean) => Promise<void>;
   logout: () => void;
   impersonate: (trainerId: number, trainerName: string, trainerAxcelerateContactId: string | null) => Promise<void>;
   stopImpersonating: () => Promise<void>;
@@ -40,14 +40,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async (email: string, password: string) => {
-    const res = await authApi.login(email, password);
+    const deviceToken = localStorage.getItem('device_token') ?? undefined;
+    const res = await authApi.login(email, password, deviceToken);
+    if (!res.data.requiresMfa && res.data.accessToken) {
+      localStorage.setItem('token', res.data.accessToken);
+      setUser(res.data.user);
+    }
     return res.data as { requiresMfa: boolean; email: string };
   };
 
-  const verifyMfa = async (email: string, code: string) => {
-    const res = await authApi.verifyMfa(email, code);
-    const { accessToken, user: userData } = res.data;
+  const verifyMfa = async (email: string, code: string, trustDevice?: boolean) => {
+    const res = await authApi.verifyMfa(email, code, trustDevice);
+    const { accessToken, user: userData, deviceToken } = res.data;
     localStorage.setItem('token', accessToken);
+    if (deviceToken) {
+      localStorage.setItem('device_token', deviceToken);
+    }
     setUser(userData);
   };
 

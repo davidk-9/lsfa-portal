@@ -1,6 +1,6 @@
 import { Controller, Post, Body, Request, UseGuards, Get } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { LoginDto, VerifyMfaDto, ImpersonateDto } from './dto/auth.dto';
+import { LoginDto, VerifyMfaDto, ImpersonateDto, ForgotPasswordDto, ResetPasswordDto } from './dto/auth.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { Roles } from './decorators/roles.decorator';
 import { RolesGuard } from './guards/roles.guard';
@@ -11,12 +11,22 @@ export class AuthController {
 
   @Post('login')
   login(@Body() dto: LoginDto) {
-    return this.authService.login(dto.email, dto.password);
+    return this.authService.login(dto.email, dto.password, dto.deviceToken);
   }
 
   @Post('verify-mfa')
   verifyMfa(@Body() dto: VerifyMfaDto) {
-    return this.authService.verifyMfa(dto.email, dto.code);
+    return this.authService.verifyMfa(dto.email, dto.code, dto.trustDevice);
+  }
+
+  @Post('forgot-password')
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto.email);
+  }
+
+  @Post('reset-password')
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto.token, dto.mfaCode, dto.newPassword);
   }
 
   @UseGuards(JwtAuthGuard)

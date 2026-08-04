@@ -4,6 +4,7 @@ import { ToastProvider } from './context/ToastContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AppLayout } from './components/AppLayout';
 import { LoginPage } from './pages/LoginPage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { AdminCalendarPage } from './pages/AdminCalendarPage';
 import { TrainerPortalPage } from './pages/TrainerPortalPage';
@@ -22,6 +23,7 @@ function App() {
         <AuthProvider>
           <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route
             path="/"
             element={

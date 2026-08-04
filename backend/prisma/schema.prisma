@@ -10,22 +10,36 @@ datasource db {
 }
 
 model User {
-  id                  Int       @id @default(autoincrement())
-  email               String    @unique
-  name                String
-  passwordHash        String
-  role                Role      @default(TRAINER)
-  isActive            Boolean   @default(true)
-  mfaCode             String?
-  mfaExpiresAt        DateTime?
-  axcelerateContactId String?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
-  createdById         Int?
-  contactId           Int?      @unique
-  contact             Contact?  @relation(fields: [contactId], references: [id])
-  createdBy           User?     @relation("CreatedUsers", fields: [createdById], references: [id])
-  createdUsers        User[]    @relation("CreatedUsers")
+  id                      Int             @id @default(autoincrement())
+  email                   String          @unique
+  name                    String
+  passwordHash            String
+  role                    Role            @default(TRAINER)
+  isActive                Boolean         @default(true)
+  mfaCode                 String?
+  mfaExpiresAt            DateTime?
+  resetPasswordToken      String?
+  resetPasswordExpiresAt  DateTime?
+  axcelerateContactId     String?
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+  createdById             Int?
+  contactId               Int?            @unique
+  contact                 Contact?        @relation(fields: [contactId], references: [id])
+  createdBy               User?           @relation("CreatedUsers", fields: [createdById], references: [id])
+  createdUsers            User[]          @relation("CreatedUsers")
+  trustedDevices          TrustedDevice[]
+}
+
+model TrustedDevice {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  deviceKey String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Setting {

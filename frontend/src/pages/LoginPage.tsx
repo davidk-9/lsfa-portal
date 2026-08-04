@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { authApi } from '../api';
 import './Login.css';
 
 export function LoginPage() {
@@ -9,11 +10,13 @@ export function LoginPage() {
   const location = useLocation();
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname ?? '/dashboard';
 
-  const [step, setStep] = useState<'credentials' | 'mfa'>('credentials');
+  const [step, setStep] = useState<'credentials' | 'mfa' | 'forgot'>('credentials');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [mfaCode, setMfaCode] = useState('');
+  const [trustDevice, setTrustDevice] = useState(false);
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -21,8 +24,13 @@ export function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await login(email, password);
-      setStep('mfa');
+      const res = await login(email, password);
+      if (res.requiresMfa) {
+        setStep('mfa');
+      } else {
+        // Trusted device - logged in directly without MFA
+        navigate(from, { replace: true });
+      }
     } catch {
       setError('Invalid email or password');
     } finally {
@@ -35,10 +43,25 @@ export function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await verifyMfa(email, mfaCode);
+      await verifyMfa(email, mfaCode, trustDevice);
       navigate(from, { replace: true });
     } catch {
       setError('Invalid or expired code. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccessMsg('');
+    setLoading(true);
+    try {
+      const res = await authApi.forgotPassword(email);
+      setSuccessMsg(res.data.message || 'If your email exists in our system, you will receive a reset email.');
+    } catch {
+      setError('Failed to request password reset. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -56,7 +79,7 @@ export function LoginPage() {
         </div>
         <div className="login-tagline">LSFA Central</div>
 
-        {step === 'credentials' ? (
+        {step === 'credentials' && (
           <form onSubmit={handleLogin}>
             <h2>Sign in</h2>
             {error && <div className="login-error">{error}</div>}
@@ -82,8 +105,23 @@ export function LoginPage() {
             <button type="submit" className="btn-primary" disabled={loading}>
               {loading ? 'Signing in...' : 'Continue'}
             </button>
+            <div style={{ marginTop: 14, textAlign: 'center' }}>
+              <button
+                type="button"
+                className="btn-link"
+                onClick={() => {
+                  setError('');
+                  setSuccessMsg('');
+                  setStep('forgot');
+                }}
+              >
+                Forgotten password?
+              </button>
+            </div>
           </form>
-        ) : (
+        )}
+
+        {step === 'mfa' && (
           <form onSubmit={handleMfa}>
             <h2>Verification code</h2>
             <p className="mfa-hint">A 6-digit code has been sent to <strong>{email}</strong></p>
@@ -100,11 +138,59 @@ export function LoginPage() {
                 autoFocus
               />
             </div>
+            <div className="form-group-checkbox" style={{ margin: '14px 0', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                type="checkbox"
+                id="trustDevice"
+                checked={trustDevice}
+                onChange={(e) => setTrustDevice(e.target.checked)}
+                style={{ width: 16, height: 16, cursor: 'pointer' }}
+              />
+              <label htmlFor="trustDevice" style={{ fontSize: 13, color: '#334155', cursor: 'pointer', margin: 0 }}>
+                Trust this device for 7 days
+              </label>
+            </div>
             <button type="submit" className="btn-primary" disabled={loading}>
               {loading ? 'Verifying...' : 'Verify'}
             </button>
             <button type="button" className="btn-link" onClick={() => setStep('credentials')}>
               ← Back
+            </button>
+          </form>
+        )}
+
+        {step === 'forgot' && (
+          <form onSubmit={handleForgotPassword}>
+            <h2>Forgotten Password</h2>
+            <p className="mfa-hint">
+              Enter your email address. If it exists in our system, you will be sent a password reset link and verification code via email.
+            </p>
+            {error && <div className="login-error">{error}</div>}
+            {successMsg && <div className="login-success" style={{ padding: '10px 12px', background: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0', borderRadius: 6, fontSize: 13, marginBottom: 14 }}>{successMsg}</div>}
+            <div className="form-group">
+              <label>Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@example.com"
+                required
+                autoFocus
+              />
+            </div>
+            <button type="submit" className="btn-primary" disabled={loading}>
+              {loading ? 'Sending...' : 'Send Reset Email'}
+            </button>
+            <button
+              type="button"
+              className="btn-link"
+              onClick={() => {
+                setError('');
+                setSuccessMsg('');
+                setStep('credentials');
+              }}
+            >
+              ← Back to Sign in
             </button>
           </form>
         )}
