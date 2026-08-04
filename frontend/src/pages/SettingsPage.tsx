@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import type { ReactNode } from 'react';
-import { settingsApi } from '../api';
+import { settingsApi, contactsApi } from '../api';
 import './SettingsPage.css';
 import api from '../api/client';
 
-type TabId = 'api' | 'course-codes' | 'trainer-portal' | 'azure-storage' | 'checklists' | 'practical-tasks' | 'success-comments' | 'ai' | 'wp-sync';
+type TabId = 'api' | 'course-codes' | 'trainer-portal' | 'azure-storage' | 'checklists' | 'practical-tasks' | 'success-comments' | 'ai' | 'wp-sync' | 'contact-user-sync';
 
 interface Tab {
   id: TabId;
@@ -21,6 +21,7 @@ const TABS: Tab[] = [
   { id: 'success-comments', label: 'Success Comments' },
   { id: 'ai', label: 'AI Evidence' },
   { id: 'wp-sync', label: 'WordPress Sync' },
+  { id: 'contact-user-sync', label: 'Contact User Sync' },
 ];
 
 // Setting keys
@@ -148,6 +149,9 @@ export function SettingsPage() {
           )}
           {activeTab === 'wp-sync' && (
             <WpSyncTab val={val} set={set} />
+          )}
+          {activeTab === 'contact-user-sync' && (
+            <ContactUserSyncTab />
           )}
         </div>
       </div>
@@ -1732,6 +1736,152 @@ function AxcelerateSyncSection() {
         )}
       </div>
     </SettingSection>
+  );
+}
+
+// ─── Tab: Contact User Sync ───────────────────────────────────────────────────
+
+function ContactUserSyncTab() {
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<{
+    success: boolean;
+    summary: {
+      totalVerifiedContacts: number;
+      processedCount: number;
+      linkedExistingCount: number;
+      createdCount: number;
+      skippedAlreadyLinkedCount: number;
+      conflictCount: number;
+    };
+    conflicts: Array<{
+      contactId: number;
+      email: string;
+      userAlreadyLinkedToContactId: number;
+      reason: string;
+    }>;
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleRunSync = async () => {
+    if (!confirm('Run USI Verified Contact-to-User Sync? This will create or link user accounts for contacts with verified USIs.')) {
+      return;
+    }
+
+    setRunning(true);
+    setError(null);
+    setResult(null);
+
+    try {
+      const res = await contactsApi.syncUsersWithVerifiedUsi();
+      setResult(res.data);
+    } catch (err: any) {
+      setError(err?.response?.data?.message || err?.message || 'Failed to execute contact-to-user sync');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="tab-panel">
+      <h2>Verified USI Contact-to-User Sync</h2>
+      <p className="tab-description">
+        Bulk routine to find all contact profiles with a verified USI and automatically sync them to operational system user accounts.
+      </p>
+
+      <SettingSection title="Bulk Synchronization">
+        <div style={{ padding: '16px' }}>
+          <p style={{ color: '#475569', fontSize: 14, marginTop: 0, marginBottom: 16, lineHeight: 1.6 }}>
+            <strong>Routine Logic:</strong>
+            <br />
+            1. Finds contacts where <code>USI Verified</code> is checked and an email is set.
+            <br />
+            2. If the contact is already linked to a user account, it skips it.
+            <br />
+            3. Searches if a user account with that email exists:
+            <br />
+            &nbsp;&nbsp;&bull; If a user exists and is unlinked, it links them.
+            <br />
+            &nbsp;&nbsp;&bull; If a user exists but is ALREADY linked to another contact, it logs a conflict for investigation.
+            <br />
+            4. If no user exists, it creates a new <code>STUDENT</code> user account for that contact with a temporary password and links them.
+          </p>
+
+          <button
+            type="button"
+            onClick={handleRunSync}
+            disabled={running}
+            style={{
+              background: '#2563eb',
+              color: '#ffffff',
+              padding: '10px 20px',
+              borderRadius: 6,
+              border: 'none',
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: running ? 'not-allowed' : 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            {running ? 'Running Sync Routine...' : 'Run Contact-to-User Sync'}
+          </button>
+
+          {error && (
+            <div style={{ marginTop: 16, padding: 12, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 6, color: '#991b1b', fontSize: 14 }}>
+              <strong>Error:</strong> {error}
+            </div>
+          )}
+
+          {result && (
+            <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: 16 }}>
+                <h3 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#166534' }}>Sync Routine Completed Successfully</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+                  <div style={{ background: '#ffffff', padding: 12, borderRadius: 6, border: '1px solid #dcfce7' }}>
+                    <div style={{ fontSize: 12, color: '#64748b' }}>Total Verified Contacts</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: '#0f172a' }}>{result.summary.totalVerifiedContacts}</div>
+                  </div>
+                  <div style={{ background: '#ffffff', padding: 12, borderRadius: 6, border: '1px solid #dcfce7' }}>
+                    <div style={{ fontSize: 12, color: '#64748b' }}>Linked Existing Users</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: '#2563eb' }}>{result.summary.linkedExistingCount}</div>
+                  </div>
+                  <div style={{ background: '#ffffff', padding: 12, borderRadius: 6, border: '1px solid #dcfce7' }}>
+                    <div style={{ fontSize: 12, color: '#64748b' }}>New Users Created</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: '#16a34a' }}>{result.summary.createdCount}</div>
+                  </div>
+                  <div style={{ background: '#ffffff', padding: 12, borderRadius: 6, border: '1px solid #dcfce7' }}>
+                    <div style={{ fontSize: 12, color: '#64748b' }}>Already Linked (Skipped)</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: '#64748b' }}>{result.summary.skippedAlreadyLinkedCount}</div>
+                  </div>
+                  <div style={{ background: '#ffffff', padding: 12, borderRadius: 6, border: '1px solid #dcfce7' }}>
+                    <div style={{ fontSize: 12, color: '#64748b' }}>Conflicts / Manual Log</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: result.summary.conflictCount > 0 ? '#dc2626' : '#16a34a' }}>{result.summary.conflictCount}</div>
+                  </div>
+                </div>
+              </div>
+
+              {result.conflicts && result.conflicts.length > 0 && (
+                <div style={{ background: '#fff1f2', border: '1px solid #fecdd3', borderRadius: 8, padding: 16 }}>
+                  <h3 style={{ margin: '0 0 12px 0', fontSize: 15, color: '#9f1239' }}>
+                    Conflicts & Duplicate Account Warnings ({result.conflicts.length})
+                  </h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {result.conflicts.map((c, idx) => (
+                      <div key={idx} style={{ background: '#ffffff', padding: 12, borderRadius: 6, border: '1px solid #ffe4e6', fontSize: 13, color: '#881337' }}>
+                        <strong>Email:</strong> {c.email} &bull; <strong>Contact ID:</strong> #{c.contactId} &bull; <strong>Already Linked to Contact ID:</strong> #{c.userAlreadyLinkedToContactId}
+                        <br />
+                        <span style={{ color: '#9f1239', fontSize: 12 }}>{c.reason}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </SettingSection>
+    </div>
   );
 }
 

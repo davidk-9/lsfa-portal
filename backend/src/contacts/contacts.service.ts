@@ -182,6 +182,429 @@ export class ContactsService {
     return contact;
   }
 
+  async getContactsPaginated(page: number = 1, limit: number = 20, search: string = '') {
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+    if (search.trim()) {
+      const q = search.trim();
+      const words = q.split(/\s+/).filter(Boolean);
+
+      const orConditions: any[] = [
+        { givenName: { contains: q, mode: 'insensitive' } },
+        { surname: { contains: q, mode: 'insensitive' } },
+        { emailAddress: { contains: q, mode: 'insensitive' } },
+        { mobilePhone: { contains: q, mode: 'insensitive' } },
+        { usi: { contains: q, mode: 'insensitive' } },
+      ];
+
+      // If search contains multiple words (e.g. "David Kleinschmidt")
+      if (words.length >= 2) {
+        const first = words[0];
+        const rest = words.slice(1).join(' ');
+        orConditions.push(
+          {
+            AND: [
+              { givenName: { contains: first, mode: 'insensitive' } },
+              { surname: { contains: rest, mode: 'insensitive' } },
+            ],
+          },
+          {
+            AND: [
+              { givenName: { contains: rest, mode: 'insensitive' } },
+              { surname: { contains: first, mode: 'insensitive' } },
+            ],
+          },
+        );
+      }
+
+      // If search is numeric, search contactId too
+      if (!isNaN(Number(q))) {
+        orConditions.push({ contactId: parseInt(q, 10) });
+      }
+
+      where.OR = orConditions;
+    }
+
+    const [data, total] = await Promise.all([
+      this.prisma.contact.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { updatedAt: 'desc' },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              name: true,
+              role: true,
+              isActive: true,
+            },
+          },
+        },
+      }),
+      this.prisma.contact.count({ where }),
+    ]);
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  async searchContactsQuick(query: string, limit: number = 10) {
+    if (!query || query.trim().length === 0) return [];
+
+    const q = query.trim();
+    const words = q.split(/\s+/).filter(Boolean);
+
+    const orConditions: any[] = [
+      { givenName: { contains: q, mode: 'insensitive' } },
+      { surname: { contains: q, mode: 'insensitive' } },
+      { emailAddress: { contains: q, mode: 'insensitive' } },
+      { mobilePhone: { contains: q, mode: 'insensitive' } },
+      { usi: { contains: q, mode: 'insensitive' } },
+    ];
+
+    if (words.length >= 2) {
+      const first = words[0];
+      const rest = words.slice(1).join(' ');
+      orConditions.push(
+        {
+          AND: [
+            { givenName: { contains: first, mode: 'insensitive' } },
+            { surname: { contains: rest, mode: 'insensitive' } },
+          ],
+        },
+        {
+          AND: [
+            { givenName: { contains: rest, mode: 'insensitive' } },
+            { surname: { contains: first, mode: 'insensitive' } },
+          ],
+        },
+      );
+    }
+
+    if (!isNaN(Number(q))) {
+      orConditions.push({ contactId: parseInt(q, 10) });
+    }
+
+    // Use ILIKE / contains across key contact fields
+    const contacts = await this.prisma.contact.findMany({
+      where: {
+        OR: orConditions,
+      },
+      take: limit,
+      select: {
+        id: true,
+        contactId: true,
+        givenName: true,
+        surname: true,
+        emailAddress: true,
+        mobilePhone: true,
+        usi: true,
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    return contacts;
+  }
+
+  async getContactById(id: number) {
+    const contact = await this.prisma.contact.findUnique({
+      where: { id },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            isActive: true,
+            createdAt: true,
+          },
+        },
+      },
+    });
+
+    if (!contact) throw new NotFoundException(`Contact with ID ${id} not found`);
+    return contact;
+  }
+
+  async updateContactById(id: number, updateData: any) {
+    const contact = await this.prisma.contact.findUnique({ where: { id } });
+    if (!contact) throw new NotFoundException(`Contact with ID ${id} not found`);
+
+    delete updateData.id;
+    delete updateData.contactId;
+    delete updateData.userId;
+    delete updateData.createdAt;
+    delete updateData.updatedAt;
+    delete updateData.user;
+
+    const intFields = [
+      'countryId', 'sCountryId', 'sourceCodeId', 'citizenStatusId', 'fkResidencyStatusId',
+      'countryOfBirthId', 'countryOfCitizenId', 'indigenousStatusId', 'mainLanguageId',
+      'englishProficiencyId', 'highestSchoolLevelId', 'currentSchoolLevel', 'labourForceId',
+      'employerContactId', 'payerContactId', 'supervisorContactId', 'coachContactId',
+      'agentContactId', 'contactRoleId', 'orgId'
+    ];
+
+    for (const field of intFields) {
+      if (field in updateData) {
+        if (updateData[field] === '' || updateData[field] === null || updateData[field] === undefined) {
+          updateData[field] = null;
+        } else if (typeof updateData[field] === 'string' && !isNaN(Number(updateData[field]))) {
+          updateData[field] = parseInt(updateData[field], 10);
+        }
+      }
+    }
+
+    if ('studyReasonId' in updateData && updateData.studyReasonId != null) {
+      updateData.studyReasonId = String(updateData.studyReasonId);
+    }
+
+    const updated = await this.prisma.contact.update({
+      where: { id },
+      data: updateData,
+      include: { user: true },
+    });
+
+    // Best effort push to Axcelerate
+    const axId = Number(contact.contactId);
+    if (axId && axId > 0 && axId < 900000000) {
+      try {
+        const axParams = mapContactDataToAxcelerateParams(updated);
+        await this.axcelerate.updateContact(axId, axParams);
+      } catch (err: any) {
+        this.logger.error(`Failed to push contact ${id} update to Axcelerate: ${err.message}`);
+      }
+    }
+
+    return updated;
+  }
+
+  async syncAxcelerateForContact(id: number) {
+    const contact = await this.prisma.contact.findUnique({ where: { id } });
+    if (!contact) throw new NotFoundException(`Contact with ID ${id} not found`);
+
+    const axId = Number(contact.contactId);
+    if (!axId || axId >= 900000000) {
+      throw new BadRequestException('Contact does not have a valid Axcelerate Contact ID');
+    }
+
+    const payload = await this.axcelerate.getContactDetail(axId);
+    if (!payload || !payload.CONTACTID) {
+      throw new NotFoundException(`Could not retrieve details from Axcelerate for Contact ID: ${axId}`);
+    }
+
+    const mapped = mapAxceleratePayloadToContactData(payload);
+
+    return this.prisma.contact.update({
+      where: { id },
+      data: mapped,
+      include: { user: true },
+    });
+  }
+
+  async linkUserToContact(contactId: number, userId: number) {
+    const contact = await this.prisma.contact.findUnique({ where: { id: contactId } });
+    if (!contact) throw new NotFoundException(`Contact ${contactId} not found`);
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException(`User ${userId} not found`);
+
+    // Check if user is already linked to another contact
+    if (user.contactId && user.contactId !== contactId) {
+      throw new BadRequestException(`User ${user.email} is already linked to another contact`);
+    }
+
+    // Link user to contact
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        contactId,
+        axcelerateContactId: contact.contactId < 900000000 ? String(contact.contactId) : user.axcelerateContactId,
+      },
+    });
+
+    return this.getContactById(contactId);
+  }
+
+  async unlinkUserFromContact(contactId: number) {
+    const contact = await this.prisma.contact.findUnique({
+      where: { id: contactId },
+      include: { user: true },
+    });
+
+    if (!contact) throw new NotFoundException(`Contact ${contactId} not found`);
+    if (!contact.user) throw new BadRequestException(`Contact ${contactId} is not linked to any user`);
+
+    await this.prisma.user.update({
+      where: { id: contact.user.id },
+      data: { contactId: null },
+    });
+
+    return this.getContactById(contactId);
+  }
+
+  async createUserForContact(contactId: number, customPassword?: string) {
+    const contact = await this.prisma.contact.findUnique({
+      where: { id: contactId },
+      include: { user: true },
+    });
+
+    if (!contact) throw new NotFoundException(`Contact ${contactId} not found`);
+    if (contact.user) throw new BadRequestException(`Contact is already linked to user ${contact.user.email}`);
+
+    if (!contact.emailAddress) {
+      throw new BadRequestException('Contact must have an email address to create a user account');
+    }
+
+    // Check if user with this email already exists
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email: contact.emailAddress },
+    });
+
+    if (existingUser) {
+      // Auto link existing user
+      await this.prisma.user.update({
+        where: { id: existingUser.id },
+        data: {
+          contactId: contact.id,
+          axcelerateContactId: contact.contactId < 900000000 ? String(contact.contactId) : existingUser.axcelerateContactId,
+        },
+      });
+      return this.getContactById(contactId);
+    }
+
+    const name = [contact.givenName, contact.surname].filter(Boolean).join(' ') || 'Student User';
+    const rawPassword = customPassword || 'LSFA' + Math.floor(100000 + Math.random() * 900000);
+    const bcrypt = await import('bcrypt');
+    const passwordHash = await bcrypt.hash(rawPassword, 10);
+
+    const newUser = await this.prisma.user.create({
+      data: {
+        email: contact.emailAddress,
+        name,
+        passwordHash,
+        role: 'STUDENT',
+        isActive: true,
+        contactId: contact.id,
+        axcelerateContactId: contact.contactId < 900000000 ? String(contact.contactId) : null,
+      },
+    });
+
+    return {
+      contact: await this.getContactById(contactId),
+      createdUser: {
+        id: newUser.id,
+        email: newUser.email,
+        temporaryPassword: rawPassword,
+      },
+    };
+  }
+
+  async syncUsersWithVerifiedUsi() {
+    this.logger.log('Starting verified USI contact-to-user sync routine...');
+
+    // Find all contacts with usiVerified = true and a non-empty emailAddress
+    const contacts = await this.prisma.contact.findMany({
+      where: {
+        usiVerified: true,
+        emailAddress: { not: '' },
+      },
+      include: {
+        user: true,
+      },
+    });
+
+    let processedCount = 0;
+    let linkedExistingCount = 0;
+    let createdCount = 0;
+    let skippedAlreadyLinkedCount = 0;
+    const conflicts: Array<{ contactId: number; email: string; userAlreadyLinkedToContactId: number; reason: string }> = [];
+
+    const bcrypt = await import('bcrypt');
+
+    for (const contact of contacts) {
+      processedCount++;
+      if (!contact.emailAddress) continue;
+      const email = contact.emailAddress.trim().toLowerCase();
+
+      // Case: Contact is already linked to a user account
+      if (contact.user) {
+        skippedAlreadyLinkedCount++;
+        continue;
+      }
+
+      // Check if a user with this email address already exists
+      const existingUser = await this.prisma.user.findUnique({
+        where: { email },
+      });
+
+      if (existingUser) {
+        // If that existing user is ALREADY linked to another contact, log conflict and skip
+        if (existingUser.contactId && existingUser.contactId !== contact.id) {
+          conflicts.push({
+            contactId: contact.id,
+            email,
+            userAlreadyLinkedToContactId: existingUser.contactId,
+            reason: `User ${email} (ID: ${existingUser.id}) is already linked to Contact ID ${existingUser.contactId}. Cannot link to Contact ID ${contact.id}.`,
+          });
+          continue;
+        }
+
+        // Link existing user to this contact
+        await this.prisma.user.update({
+          where: { id: existingUser.id },
+          data: {
+            contactId: contact.id,
+            axcelerateContactId: contact.contactId < 900000000 ? String(contact.contactId) : existingUser.axcelerateContactId,
+          },
+        });
+        linkedExistingCount++;
+      } else {
+        // Create new STUDENT role user account
+        const name = [contact.givenName, contact.surname].filter(Boolean).join(' ') || 'Student User';
+        const rawPassword = 'LSFA' + Math.floor(100000 + Math.random() * 900000);
+        const passwordHash = await bcrypt.hash(rawPassword, 10);
+
+        await this.prisma.user.create({
+          data: {
+            email,
+            name,
+            passwordHash,
+            role: 'STUDENT',
+            isActive: true,
+            contactId: contact.id,
+            axcelerateContactId: contact.contactId < 900000000 ? String(contact.contactId) : null,
+          },
+        });
+        createdCount++;
+      }
+    }
+
+    this.logger.log(`Verified USI sync finished: ${processedCount} processed, ${linkedExistingCount} linked to existing users, ${createdCount} created, ${skippedAlreadyLinkedCount} already linked, ${conflicts.length} conflicts.`);
+
+    return {
+      success: true,
+      summary: {
+        totalVerifiedContacts: contacts.length,
+        processedCount,
+        linkedExistingCount,
+        createdCount,
+        skippedAlreadyLinkedCount,
+        conflictCount: conflicts.length,
+      },
+      conflicts,
+    };
+  }
+
   async syncSingleContactById(axId: number) {
     const payload = await this.axcelerate.getContactDetail(axId);
     if (!payload || !payload.CONTACTID) {

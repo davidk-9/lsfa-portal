@@ -2,6 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { ImpersonationBanner } from './ImpersonationBanner';
+import { ContactSearchModal } from './ContactSearchModal';
 import siteIcon from '../assets/siteicon.png';
 import './AppLayout.css';
 
@@ -40,6 +41,26 @@ function MyCalendarIcon() {
       <path d="M12 8v4l2.5 2.5" />
       <path d="M4 12h2" />
       <path d="M18 12h2" />
+    </svg>
+  );
+}
+
+function ContactsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
     </svg>
   );
 }
@@ -126,6 +147,7 @@ function ChevronRightIcon() {
 export function AppLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window === 'undefined') {
       return false;
@@ -175,8 +197,41 @@ export function AppLayout() {
 
             <nav className="sidebar-nav">
               {isSuperOrAdmin && (
+                <div style={{ padding: '0 8px 12px 8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setIsSearchOpen(true)}
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: collapsed ? '10px' : '8px 12px',
+                      background: '#e2e8f0',
+                      color: '#0f172a',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: 6,
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      justifyContent: collapsed ? 'center' : 'flex-start',
+                      transition: 'background 0.2s',
+                    }}
+                    title="Quick Contact Search"
+                  >
+                    <span style={{ width: 18, height: 18, display: 'inline-flex', color: '#334155' }}><SearchIcon /></span>
+                    {!collapsed && <span>Quick Search...</span>}
+                  </button>
+                </div>
+              )}
+
+              {isSuperOrAdmin && (
                 <>
                   <div className="nav-section-label">{collapsed ? 'ADM' : 'Administration'}</div>
+                  <NavLink to="/contacts" className={({ isActive }) => getSidebarLinkClassName(isActive, collapsed)} title="Contact Management">
+                    <span className="nav-link-icon"><ContactsIcon /></span>
+                    {!collapsed && <span className="nav-link-label">Contact Management</span>}
+                  </NavLink>
                   <NavLink to="/admin-calendar" className={({ isActive }) => getSidebarLinkClassName(isActive, collapsed)} title="Admin Calendar">
                     <span className="nav-link-icon"><AdminCalendarIcon /></span>
                     {!collapsed && <span className="nav-link-label">Admin Calendar</span>}
@@ -248,6 +303,7 @@ export function AppLayout() {
           </main>
         </div>
       </div>
+      <ContactSearchModal isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
     </div>
   );
 }

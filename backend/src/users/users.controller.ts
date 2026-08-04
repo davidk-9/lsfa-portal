@@ -4,6 +4,7 @@ import {
   Post,
   Patch,
   Param,
+  Query,
   Body,
   ParseIntPipe,
   Request,
@@ -22,8 +23,15 @@ export class UsersController {
 
   @Get()
   @Roles('SUPER_USER', 'ADMIN')
-  findAll() {
-    return this.usersService.findAll();
+  findAll(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('search') search?: string,
+    @Query('role') role?: string,
+  ) {
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const limitNum = limit ? parseInt(limit, 10) : 20;
+    return this.usersService.findAllPaginated(pageNum, limitNum, search, role);
   }
 
   @Get('trainers')

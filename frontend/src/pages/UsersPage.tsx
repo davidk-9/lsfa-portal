@@ -28,6 +28,12 @@ const emptyForm = (): UserForm => ({
 
 export function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [selectedRole, setSelectedRole] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -37,18 +43,47 @@ export function UsersPage() {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [form, setForm] = useState<UserForm>(emptyForm());
 
-  const loadUsers = () => {
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(searchInput);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  const fetchUsers = async (p: number, s: string, r: string) => {
     setLoading(true);
     setError(null);
-    usersApi.list()
-      .then((res) => setUsers(res.data))
-      .catch(() => setError('Unable to load users.'))
-      .finally(() => setLoading(false));
+    try {
+      const res = await usersApi.getPaginated(p, 20, s, r);
+      setUsers(res.data.data);
+      setTotal(res.data.total);
+      setPage(res.data.page);
+      setTotalPages(res.data.totalPages);
+    } catch (err: any) {
+      setError('Unable to load users.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
-    loadUsers();
-  }, []);
+    fetchUsers(page, search, selectedRole);
+  }, [page, search, selectedRole]);
+
+  const handleSearchSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    setPage(1);
+    setSearch(searchInput);
+  };
+
+  const handleClearFilters = () => {
+    setSearchInput('');
+    setSearch('');
+    setSelectedRole('');
+    setPage(1);
+  };
 
   const openCreate = () => {
     setEditingUser(null);
@@ -123,7 +158,7 @@ export function UsersPage() {
       }
 
       closeModal();
-      loadUsers();
+      fetchUsers(page, search, selectedRole);
     } catch (err: any) {
       setError(err.response?.data?.message || 'Unable to save user.');
     } finally {
@@ -141,7 +176,7 @@ export function UsersPage() {
       } else {
         await usersApi.restore(user.id);
       }
-      loadUsers();
+      fetchUsers(page, search, selectedRole);
     } catch (err: any) {
       setError(err.response?.data?.message || `Unable to ${user.isActive ? 'archive' : 'restore'} user.`);
     } finally {
@@ -154,18 +189,97 @@ export function UsersPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div>
           <h1 style={{ marginBottom: 8 }}>User Management</h1>
-          <p style={{ color: '#64748b', margin: 0 }}>Create, update, and archive users without deleting them.</p>
+          <p style={{ color: '#64748b', margin: 0 }}>
+            Create, update, and archive users without deleting them ({total.toLocaleString()} total).
+          </p>
         </div>
         <button type="button" onClick={openCreate} style={primaryButton}>Add User</button>
+      </div>
+
+      <div style={{ display: 'flex', gap: 12, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+        <form onSubmit={handleSearchSubmit} style={{ display: 'flex', gap: 8, flex: 1, maxWidth: 400 }}>
+          <input
+            type="text"
+            placeholder="Search by name, email, or user ID..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            style={{
+              flex: 1,
+              padding: '8px 12px',
+              borderRadius: 6,
+              border: '1px solid #cbd5e1',
+              fontSize: 14,
+            }}
+          />
+          <button
+            type="submit"
+            style={{
+              padding: '8px 16px',
+              background: '#2563eb',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: 6,
+              fontSize: 14,
+              fontWeight: 500,
+              cursor: 'pointer',
+            }}
+          >
+            Search
+          </button>
+        </form>
+
+        <select
+          value={selectedRole}
+          onChange={(e) => {
+            setSelectedRole(e.target.value);
+            setPage(1);
+          }}
+          style={{
+            padding: '8px 12px',
+            borderRadius: 6,
+            border: '1px solid #cbd5e1',
+            fontSize: 14,
+            background: '#ffffff',
+          }}
+        >
+          <option value="">All Roles</option>
+          <option value="SUPER_USER">Super User</option>
+          <option value="ADMIN">Admin</option>
+          <option value="TRAINER">Trainer</option>
+          <option value="STUDENT">Student</option>
+        </select>
+
+        {(searchInput || selectedRole) && (
+          <button
+            type="button"
+            onClick={handleClearFilters}
+            style={{
+              padding: '8px 16px',
+              background: '#ffffff',
+              color: '#334155',
+              border: '1px solid #cbd5e1',
+              borderRadius: 6,
+              fontSize: 14,
+              cursor: 'pointer',
+            }}
+          >
+            Clear Filters
+          </button>
+        )}
       </div>
 
       {error ? <div style={errorBox}>{error}</div> : null}
 
       {loading ? (
-        <p>Loading...</p>
+        <div style={{ padding: 24, color: '#64748b' }}>Loading users...</div>
+      ) : users.length === 0 ? (
+        <div style={{ padding: 24, background: '#ffffff', borderRadius: 8, border: '1px solid #e2e8f0', color: '#64748b' }}>
+          No users found matching your search or filters.
+        </div>
       ) : (
-        <div style={{ background: '#fff', borderRadius: 8, overflow: 'hidden', border: '1px solid #e2e8f0' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <>
+          <div style={{ background: '#fff', borderRadius: 8, overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                 <th style={th}>Name</th>
@@ -209,7 +323,50 @@ export function UsersPage() {
             </tbody>
           </table>
         </div>
-      )}
+
+        {totalPages > 1 && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
+            <div style={{ fontSize: 13, color: '#64748b' }}>
+              Page {page} of {totalPages} ({total.toLocaleString()} records)
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                style={{
+                  background: page <= 1 ? '#f1f5f9' : '#ffffff',
+                  color: page <= 1 ? '#94a3b8' : '#334155',
+                  border: '1px solid #cbd5e1',
+                  padding: '6px 12px',
+                  borderRadius: 6,
+                  fontSize: 13,
+                  cursor: page <= 1 ? 'not-allowed' : 'pointer',
+                }}
+              >
+                &larr; Previous
+              </button>
+              <button
+                type="button"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                style={{
+                  background: page >= totalPages ? '#f1f5f9' : '#ffffff',
+                  color: page >= totalPages ? '#94a3b8' : '#334155',
+                  border: '1px solid #cbd5e1',
+                  padding: '6px 12px',
+                  borderRadius: 6,
+                  fontSize: 13,
+                  cursor: page >= totalPages ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Next &rarr;
+              </button>
+            </div>
+          </div>
+        )}
+      </>
+    )}
 
       {modalOpen ? (
         <div style={modalOverlay} onClick={closeModal}>

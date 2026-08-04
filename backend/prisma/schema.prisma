@@ -301,7 +301,9 @@ model Contact {
   user                                   User?
 
   @@index([emailAddress])
-  @@index([surname, givenName])
+  @@index([givenName, surname])
+  @@index([mobilePhone])
+  @@index([usi])
 }
 
 model GNAFAddress {

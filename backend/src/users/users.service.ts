@@ -30,6 +30,67 @@ export class UsersService {
     });
   }
 
+  async findAllPaginated(page: number = 1, limit: number = 20, search: string = '', role?: string) {
+    const skip = (page - 1) * limit;
+    const where: any = {};
+
+    if (role && role.trim()) {
+      where.role = role.trim();
+    }
+
+    if (search && search.trim()) {
+      const q = search.trim();
+      const words = q.split(/\s+/).filter(Boolean);
+
+      const orConditions: any[] = [
+        { name: { contains: q, mode: 'insensitive' } },
+        { email: { contains: q, mode: 'insensitive' } },
+      ];
+
+      if (words.length >= 2) {
+        orConditions.push({
+          AND: [
+            { name: { contains: words[0], mode: 'insensitive' } },
+            { name: { contains: words.slice(1).join(' '), mode: 'insensitive' } },
+          ],
+        });
+      }
+
+      if (!isNaN(Number(q))) {
+        orConditions.push({ id: parseInt(q, 10) });
+      }
+
+      where.OR = orConditions;
+    }
+
+    const [data, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        skip,
+        take: limit,
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          isActive: true,
+          axcelerateContactId: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
   async findTrainers() {
     return this.prisma.user.findMany({
       where: { role: 'TRAINER', isActive: true },

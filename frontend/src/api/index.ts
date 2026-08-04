@@ -23,6 +23,8 @@ export const authApi = {
 
 export const usersApi = {
   list: () => api.get('/users'),
+  getPaginated: (page: number = 1, limit: number = 20, search: string = '', role: string = '') =>
+    api.get('/users', { params: { page, limit, search, role } }),
   listTrainers: () => api.get('/users/trainers'),
   get: (id: number) => api.get(`/users/${id}`),
   create: (data: object) => api.post('/users', data),
@@ -31,6 +33,23 @@ export const usersApi = {
   restore: (id: number) => api.patch(`/users/${id}/restore`),
   deactivate: (id: number) => api.patch(`/users/${id}/deactivate`),
   lookupAxcelerateContact: (email: string) => api.post('/users/lookup-axcelerate-contact', { email }),
+};
+
+export const contactsApi = {
+  getMyContact: () => api.get('/contacts/me'),
+  updateMyContact: (data: object) => api.patch('/contacts/me', data),
+  syncAxcelerate: (axcelerateContactId?: number) => api.post('/contacts/sync-axcelerate', { axcelerateContactId }),
+  
+  getPaginated: (page: number = 1, limit: number = 20, search: string = '') =>
+    api.get('/contacts', { params: { page, limit, search } }),
+  getById: (id: number) => api.get(`/contacts/${id}`),
+  updateById: (id: number, data: object) => api.patch(`/contacts/${id}`, data),
+  syncAxcelerateForContact: (id: number) => api.post(`/contacts/${id}/sync-axcelerate`),
+  searchQuick: (q: string, limit: number = 10) => api.get('/contacts/search', { params: { q, limit } }),
+  linkUser: (contactId: number, userId: number) => api.post(`/contacts/${contactId}/link-user`, { userId }),
+  unlinkUser: (contactId: number) => api.post(`/contacts/${contactId}/unlink-user`),
+  createUser: (contactId: number, password?: string) => api.post(`/contacts/${contactId}/create-user`, { password }),
+  syncUsersWithVerifiedUsi: () => api.post('/contacts/sync-users-usi'),
 };
 
 export const settingsApi = {
@@ -113,11 +132,4 @@ export const profileApi = {
     api.patch('/profile/me', data),
   changePassword: (data: { newPassword: string }) =>
     api.post('/profile/change-password', data),
-};
-
-export const contactsApi = {
-  getMyContact: () => api.get('/contacts/me'),
-  updateMyContact: (data: any) => api.patch('/contacts/me', data),
-  syncAxcelerate: (axcelerateContactId?: number) =>
-    api.post('/contacts/sync-axcelerate', { axcelerateContactId }),
 };

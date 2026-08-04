@@ -10,6 +10,8 @@ import { AdminCalendarPage } from './pages/AdminCalendarPage';
 import { TrainerPortalPage } from './pages/TrainerPortalPage';
 import { MyCalendarPage } from './pages/MyCalendarPage';
 import { UsersPage } from './pages/UsersPage';
+import { ContactsPage } from './pages/ContactsPage';
+import { ContactDetailsPage } from './pages/ContactDetailsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { BulkSchedulerPage } from './pages/BulkSchedulerPage';
 import { WorkshopDetailPage } from './pages/WorkshopDetailPage';
@@ -36,6 +38,22 @@ function App() {
             <Route path="dashboard" element={<DashboardPage />} />
             <Route path="profile" element={<UserProfilePage />} />
             <Route path="my-details" element={<MyDetailsPage />} />
+            <Route
+              path="contacts"
+              element={
+                <ProtectedRoute allowedRoles={['SUPER_USER', 'ADMIN']}>
+                  <ContactsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="contacts/:id"
+              element={
+                <ProtectedRoute allowedRoles={['SUPER_USER', 'ADMIN']}>
+                  <ContactDetailsPage />
+                </ProtectedRoute>
+              }
+            />
             <Route
               path="admin-calendar"
               element={
