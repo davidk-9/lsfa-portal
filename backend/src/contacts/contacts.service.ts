@@ -528,8 +528,8 @@ export class ContactsService {
     };
   }
 
-  async syncUsersWithVerifiedUsiStream(onEvent: (event: any) => void) {
-    this.logger.log('Starting contact-to-user stream sync routine...');
+  async syncUsersWithVerifiedUsiStream(verifyAxcelerate: boolean, onEvent: (event: any) => void) {
+    this.logger.log(`Starting contact-to-user stream sync routine (verifyAxcelerate: ${verifyAxcelerate})...`);
 
     // Where condition: emailAddress exists and non-empty, and at least givenName or surname exists
     const whereClause: any = {
@@ -554,13 +554,16 @@ export class ContactsService {
     let linkedExistingCount = 0;
     let createdCount = 0;
     let skippedAlreadyLinkedCount = 0;
+    let deactivatedDeletedCount = 0;
+    let deactivatedInactiveCount = 0;
+    const deactivatedDetails: Array<{ contactId: number; axcelerateContactId: number; email: string; reason: 'DELETED' | 'INACTIVE'; message: string }> = [];
     const conflicts: Array<{ contactId: number; email: string; userAlreadyLinkedToContactId: number; reason: string }> = [];
 
     const bcrypt = await import('bcrypt');
-    const chunkSize = 100;
+    const chunkSize = verifyAxcelerate ? 10 : 100;
 
     for (let skip = 0; skip < totalVerifiedContacts; skip += chunkSize) {
-      // Fetch a chunk of 100 contacts with select to keep memory minimal
+      // Fetch a chunk of contacts with select to keep memory minimal
       const chunk = await this.prisma.contact.findMany({
         where: whereClause,
         skip,
@@ -572,8 +575,9 @@ export class ContactsService {
           givenName: true,
           surname: true,
           emailAddress: true,
+          contactActive: true,
           user: {
-            select: { id: true },
+            select: { id: true, isActive: true },
           },
         },
       });
@@ -583,8 +587,116 @@ export class ContactsService {
         if (!contact.emailAddress) continue;
         const email = contact.emailAddress.trim().toLowerCase();
 
+        // Optional: Reconcile with Axcelerate API directly to check if contact is active or deleted
+        if (verifyAxcelerate && contact.contactId && contact.contactId > 0 && contact.contactId < 900000000) {
+          // Rate-limit throttle: 335ms delay enforces ~180 requests/minute max (3 req/sec)
+          await new Promise(res => setTimeout(res, 335));
+
+          let axPayload: any = null;
+          let fetchSuccess = false;
+          let attempts = 0;
+
+          while (!fetchSuccess && attempts < 3) {
+            attempts++;
+            try {
+              axPayload = await this.axcelerate.getContactDetail(contact.contactId);
+              fetchSuccess = true;
+            } catch (err: any) {
+              const status = err?.status || err?.response?.status;
+              const errDetails = err?.response?.data?.DETAILS || err?.message || '';
+              const isNotAllowed = typeof errDetails === 'string' && errDetails.includes('You are not allowed to view contact details for User no: 0');
+              const isNotFound = status === 404;
+              const isRateLimited = status === 429;
+
+              if (isRateLimited) {
+                const retryAfterHeader = err?.response?.headers?.['retry-after'];
+                const waitSeconds = retryAfterHeader ? parseInt(retryAfterHeader, 10) + 1 : 10;
+                this.logger.warn(`[Sync Reconcile] Rate limited (429) on Contact ID ${contact.contactId}. Waiting ${waitSeconds}s per Retry-After header (attempt ${attempts}/3)...`);
+                await new Promise(res => setTimeout(res, waitSeconds * 1000));
+                continue; // Retry loop
+              }
+
+              if (isNotAllowed || isNotFound) {
+                // Deactivate contact and user due to DELETED in Axcelerate
+                await this.prisma.contact.update({
+                  where: { id: contact.id },
+                  data: { contactActive: false },
+                });
+                if (contact.user) {
+                  await this.prisma.user.update({
+                    where: { id: contact.user.id },
+                    data: { isActive: false },
+                  });
+                }
+                deactivatedDeletedCount++;
+                deactivatedDetails.push({
+                  contactId: contact.id,
+                  axcelerateContactId: contact.contactId,
+                  email,
+                  reason: 'DELETED',
+                  message: `Axcelerate returned deleted status: ${errDetails || '404 Not Found'}`,
+                });
+                this.logger.log(`[Sync Reconcile] Deactivated Contact ID ${contact.id} (Axcelerate ID ${contact.contactId}): DELETED in Axcelerate (${errDetails})`);
+                break; // Handled deletion, exit retry loop
+              }
+
+              // Transient error (500, network error): log warning and skip contact without deactivating
+              this.logger.warn(`Axcelerate lookup error during sync for contact ID ${contact.contactId}: ${err.message}`);
+              break; // Exit retry loop
+            }
+          }
+
+          if (fetchSuccess) {
+            if (!axPayload || !axPayload.CONTACTID || axPayload.CONTACTACTIVE === false) {
+              // Deactivate local contact and linked user due to INACTIVE flag
+              await this.prisma.contact.update({
+                where: { id: contact.id },
+                data: { contactActive: false },
+              });
+              if (contact.user) {
+                await this.prisma.user.update({
+                  where: { id: contact.user.id },
+                  data: { isActive: false },
+                });
+              }
+              deactivatedInactiveCount++;
+              deactivatedDetails.push({
+                contactId: contact.id,
+                axcelerateContactId: contact.contactId,
+                email,
+                reason: 'INACTIVE',
+                message: `Axcelerate contact ID ${contact.contactId} has CONTACTACTIVE = false`,
+              });
+              this.logger.log(`[Sync Reconcile] Deactivated Contact ID ${contact.id} (Axcelerate ID ${contact.contactId}): INACTIVE in Axcelerate`);
+              continue;
+            } else {
+              // Update mapped details if active
+              const mapped = mapAxceleratePayloadToContactData(axPayload);
+              await this.prisma.contact.update({
+                where: { id: contact.id },
+                data: mapped,
+              });
+            }
+          } else {
+            // If fetch was skipped due to deletion or unrecoverable error, move to next contact
+            continue;
+          }
+        }
+
         // Case: Contact is already linked to a user account
         if (contact.user) {
+          // Ensure both contact and linked user are active
+          if (!contact.contactActive || !contact.user.isActive) {
+            await this.prisma.contact.update({
+              where: { id: contact.id },
+              data: { contactActive: true },
+            });
+            await this.prisma.user.update({
+              where: { id: contact.user.id },
+              data: { isActive: true },
+            });
+            this.logger.log(`[Sync Stream] Reactivated Contact ID ${contact.id} and linked User ID ${contact.user.id}`);
+          }
           skippedAlreadyLinkedCount++;
           continue;
         }
@@ -635,9 +747,9 @@ export class ContactsService {
           });
           createdCount++;
         }
-      }
+      } // <--- closes for (const contact of chunk)
 
-      // Emit progress after each chunk of 100
+      // Emit progress after each chunk
       onEvent({
         type: 'progress',
         totalVerifiedContacts,
@@ -645,11 +757,14 @@ export class ContactsService {
         linkedExistingCount,
         createdCount,
         skippedAlreadyLinkedCount,
+        deactivatedDeletedCount,
+        deactivatedInactiveCount,
+        deactivatedCount: deactivatedDeletedCount + deactivatedInactiveCount,
         conflictCount: conflicts.length,
       });
     }
 
-    this.logger.log(`Verified USI stream sync finished: ${processedCount} processed, ${linkedExistingCount} linked to existing users, ${createdCount} created, ${skippedAlreadyLinkedCount} already linked, ${conflicts.length} conflicts.`);
+    this.logger.log(`Verified USI stream sync finished: ${processedCount} processed, ${linkedExistingCount} linked to existing users, ${createdCount} created, ${skippedAlreadyLinkedCount} already linked, ${deactivatedDeletedCount} deleted, ${deactivatedInactiveCount} inactive, ${conflicts.length} conflicts.`);
 
     onEvent({
       type: 'complete',
@@ -659,8 +774,12 @@ export class ContactsService {
         linkedExistingCount,
         createdCount,
         skippedAlreadyLinkedCount,
+        deactivatedDeletedCount,
+        deactivatedInactiveCount,
+        deactivatedCount: deactivatedDeletedCount + deactivatedInactiveCount,
         conflictCount: conflicts.length,
       },
+      deactivatedDetails,
       conflicts,
     });
   }

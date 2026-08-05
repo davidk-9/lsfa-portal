@@ -43,10 +43,11 @@ export class ContactsController {
   @UseGuards(RolesGuard)
   @Roles('SUPER_USER')
   @Sse('sync-users-usi-stream')
-  streamSyncUsersWithVerifiedUsi(): Observable<MessageEvent> {
+  streamSyncUsersWithVerifiedUsi(@Request() req): Observable<MessageEvent> {
+    const verifyAxcelerate = req.query.verifyAxcelerate === 'true';
     const subject = new Subject<MessageEvent>();
     this.contactsService
-      .syncUsersWithVerifiedUsiStream((event) => subject.next({ data: event }))
+      .syncUsersWithVerifiedUsiStream(verifyAxcelerate, (event) => subject.next({ data: event }))
       .finally(() => subject.complete());
     return subject.asObservable();
   }

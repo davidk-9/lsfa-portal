@@ -190,13 +190,8 @@ export class AxcelerateService {
   // ── Contacts (cached per request cycle by caller) ────────────────────────────
 
   async getContactDetail(contactId: number): Promise<any> {
-    try {
-      const result = await this.get(`contact/${contactId}`);
-      return result;
-    } catch (err: any) {
-      this.logger.warn(`Failed to get contact detail for ${contactId}: ${err?.message}`);
-      return null;
-    }
+    const result = await this.get(`contact/${contactId}`);
+    return result;
   }
 
   async getContactsBatch(offset: number, limit: number): Promise<any[]> {

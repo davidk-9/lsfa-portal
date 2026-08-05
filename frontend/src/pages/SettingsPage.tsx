@@ -1765,6 +1765,8 @@ function ContactUserSyncTab() {
     linkedExistingCount: number;
     createdCount: number;
     skippedAlreadyLinkedCount: number;
+    deactivatedDeletedCount?: number;
+    deactivatedInactiveCount?: number;
     deactivatedCount?: number;
     conflictCount: number;
   } | null>(null);
@@ -1775,9 +1777,18 @@ function ContactUserSyncTab() {
       linkedExistingCount: number;
       createdCount: number;
       skippedAlreadyLinkedCount: number;
+      deactivatedDeletedCount?: number;
+      deactivatedInactiveCount?: number;
       deactivatedCount?: number;
       conflictCount: number;
     };
+    deactivatedDetails?: Array<{
+      contactId: number;
+      axcelerateContactId: number;
+      email: string;
+      reason: 'DELETED' | 'INACTIVE';
+      message: string;
+    }>;
     conflicts: Array<{
       contactId: number;
       email: string;
@@ -1847,6 +1858,8 @@ function ContactUserSyncTab() {
                   linkedExistingCount: 0,
                   createdCount: 0,
                   skippedAlreadyLinkedCount: 0,
+                  deactivatedDeletedCount: 0,
+                  deactivatedInactiveCount: 0,
                   deactivatedCount: 0,
                   conflictCount: 0,
                 });
@@ -1857,12 +1870,15 @@ function ContactUserSyncTab() {
                   linkedExistingCount: event.linkedExistingCount,
                   createdCount: event.createdCount,
                   skippedAlreadyLinkedCount: event.skippedAlreadyLinkedCount,
+                  deactivatedDeletedCount: event.deactivatedDeletedCount || 0,
+                  deactivatedInactiveCount: event.deactivatedInactiveCount || 0,
                   deactivatedCount: event.deactivatedCount || 0,
                   conflictCount: event.conflictCount,
                 });
               } else if (event.type === 'complete') {
                 setResult({
                   summary: event.summary,
+                  deactivatedDetails: event.deactivatedDetails,
                   conflicts: event.conflicts,
                 });
                 setProgress({
@@ -1871,6 +1887,8 @@ function ContactUserSyncTab() {
                   linkedExistingCount: event.summary.linkedExistingCount,
                   createdCount: event.summary.createdCount,
                   skippedAlreadyLinkedCount: event.summary.skippedAlreadyLinkedCount,
+                  deactivatedDeletedCount: event.summary.deactivatedDeletedCount || 0,
+                  deactivatedInactiveCount: event.summary.deactivatedInactiveCount || 0,
                   deactivatedCount: event.summary.deactivatedCount || 0,
                   conflictCount: event.summary.conflictCount,
                 });
@@ -1972,8 +1990,13 @@ function ContactUserSyncTab() {
                 <span>Linked Existing: <strong style={{ color: '#2563eb' }}>{progress.linkedExistingCount}</strong></span>
                 <span>Created New: <strong style={{ color: '#16a34a' }}>{progress.createdCount}</strong></span>
                 <span>Skipped: <strong style={{ color: '#64748b' }}>{progress.skippedAlreadyLinkedCount}</strong></span>
-                {progress.deactivatedCount !== undefined && progress.deactivatedCount > 0 && (
-                  <span>Deactivated: <strong style={{ color: '#dc2626' }}>{progress.deactivatedCount}</strong></span>
+                {(progress.deactivatedCount ?? 0) > 0 && (
+                  <span>
+                    Deactivated: <strong style={{ color: '#dc2626' }}>{progress.deactivatedCount}</strong>
+                    <span style={{ fontSize: 11, marginLeft: 4, color: '#94a3b8' }}>
+                      ({progress.deactivatedDeletedCount || 0} deleted, {progress.deactivatedInactiveCount || 0} inactive)
+                    </span>
+                  </span>
                 )}
                 <span>Conflicts: <strong style={{ color: progress.conflictCount > 0 ? '#dc2626' : '#16a34a' }}>{progress.conflictCount}</strong></span>
               </div>
@@ -2007,12 +2030,52 @@ function ContactUserSyncTab() {
                     <div style={{ fontSize: 12, color: '#64748b' }}>Already Linked (Skipped)</div>
                     <div style={{ fontSize: 20, fontWeight: 700, color: '#64748b' }}>{result.summary.skippedAlreadyLinkedCount}</div>
                   </div>
+                  {(result.summary.deactivatedCount ?? 0) > 0 && (
+                    <div style={{ background: '#ffffff', padding: 12, borderRadius: 6, border: '1px solid #fee2e2' }}>
+                      <div style={{ fontSize: 12, color: '#64748b' }}>Deactivated Accounts</div>
+                      <div style={{ fontSize: 20, fontWeight: 700, color: '#dc2626' }}>
+                        {result.summary.deactivatedCount}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#991b1b', marginTop: 2 }}>
+                        {result.summary.deactivatedDeletedCount || 0} deleted in Axcelerate
+                        <br />
+                        {result.summary.deactivatedInactiveCount || 0} inactive in Axcelerate
+                      </div>
+                    </div>
+                  )}
                   <div style={{ background: '#ffffff', padding: 12, borderRadius: 6, border: '1px solid #dcfce7' }}>
                     <div style={{ fontSize: 12, color: '#64748b' }}>Conflicts / Manual Log</div>
                     <div style={{ fontSize: 20, fontWeight: 700, color: result.summary.conflictCount > 0 ? '#dc2626' : '#16a34a' }}>{result.summary.conflictCount}</div>
                   </div>
                 </div>
               </div>
+
+              {result.deactivatedDetails && result.deactivatedDetails.length > 0 && (
+                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: 16 }}>
+                  <h3 style={{ margin: '0 0 12px 0', fontSize: 15, color: '#991b1b' }}>
+                    Deactivated Contacts Log ({result.deactivatedDetails.length})
+                  </h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 220, overflowY: 'auto' }}>
+                    {result.deactivatedDetails.map((d, idx) => (
+                      <div key={idx} style={{ background: '#ffffff', padding: 10, borderRadius: 6, border: '1px solid #fee2e2', fontSize: 13 }}>
+                        <span style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          padding: '2px 6px',
+                          borderRadius: 4,
+                          marginRight: 8,
+                          background: d.reason === 'DELETED' ? '#dc2626' : '#ea580c',
+                          color: '#fff',
+                        }}>
+                          {d.reason}
+                        </span>
+                        <strong>Email:</strong> {d.email} &bull; <strong>Axcelerate ID:</strong> #{d.axcelerateContactId} (Local ID #{d.contactId})
+                        <div style={{ color: '#7f1d1d', fontSize: 12, marginTop: 2 }}>{d.message}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {result.conflicts && result.conflicts.length > 0 && (
                 <div style={{ background: '#fff1f2', border: '1px solid #fecdd3', borderRadius: 8, padding: 16 }}>
