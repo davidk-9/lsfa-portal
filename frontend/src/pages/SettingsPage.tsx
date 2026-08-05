@@ -1777,7 +1777,7 @@ function ContactUserSyncTab() {
   }, []);
 
   const handleRunSync = async () => {
-    if (!confirm('Run USI Verified Contact-to-User Sync? This will create or link user accounts for contacts with verified USIs.')) {
+    if (!confirm('Run Contact-to-User Sync? This will create or link user accounts for all contacts with an email address and name.')) {
       return;
     }
 
@@ -1870,9 +1870,9 @@ function ContactUserSyncTab() {
 
   return (
     <div className="tab-panel">
-      <h2>Verified USI Contact-to-User Sync</h2>
+      <h2>Contact-to-User Sync</h2>
       <p className="tab-description">
-        Bulk routine to find all contact profiles with a verified USI and automatically sync them to operational system user accounts.
+        Bulk routine to find all contact profiles with an email address and name, and automatically sync them to operational system user accounts.
       </p>
 
       <SettingSection title="Bulk Synchronization">
@@ -1880,7 +1880,7 @@ function ContactUserSyncTab() {
           <p style={{ color: '#475569', fontSize: 14, marginTop: 0, marginBottom: 16, lineHeight: 1.6 }}>
             <strong>Routine Logic:</strong>
             <br />
-            1. Finds contacts where <code>USI Verified</code> is checked and an email is set.
+            1. Finds all contacts with an email address and at least one name (given name or surname).
             <br />
             2. Processes in chunked batches of 100 contacts to optimize memory performance.
             <br />

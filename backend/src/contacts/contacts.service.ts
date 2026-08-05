@@ -513,14 +513,20 @@ export class ContactsService {
   }
 
   async syncUsersWithVerifiedUsiStream(onEvent: (event: any) => void) {
-    this.logger.log('Starting verified USI contact-to-user stream sync routine...');
+    this.logger.log('Starting contact-to-user stream sync routine...');
 
-    // First count total matching verified contacts
+    // Where condition: emailAddress exists and non-empty, and at least givenName or surname exists
+    const whereClause: any = {
+      emailAddress: { not: '' },
+      OR: [
+        { givenName: { not: '' } },
+        { surname: { not: '' } },
+      ],
+    };
+
+    // Count total matching contacts
     const totalVerifiedContacts = await this.prisma.contact.count({
-      where: {
-        usiVerified: true,
-        emailAddress: { not: '' },
-      },
+      where: whereClause,
     });
 
     onEvent({
@@ -540,10 +546,7 @@ export class ContactsService {
     for (let skip = 0; skip < totalVerifiedContacts; skip += chunkSize) {
       // Fetch a chunk of 100 contacts with select to keep memory minimal
       const chunk = await this.prisma.contact.findMany({
-        where: {
-          usiVerified: true,
-          emailAddress: { not: '' },
-        },
+        where: whereClause,
         skip,
         take: chunkSize,
         orderBy: { id: 'asc' },
@@ -647,13 +650,16 @@ export class ContactsService {
   }
 
   async syncUsersWithVerifiedUsi() {
-    this.logger.log('Starting verified USI contact-to-user sync routine...');
+    this.logger.log('Starting contact-to-user sync routine...');
 
-    // Find all contacts with usiVerified = true and a non-empty emailAddress
+    // Find all contacts with non-empty emailAddress and at least one name
     const contacts = await this.prisma.contact.findMany({
       where: {
-        usiVerified: true,
         emailAddress: { not: '' },
+        OR: [
+          { givenName: { not: '' } },
+          { surname: { not: '' } },
+        ],
       },
       include: {
         user: true,
@@ -750,11 +756,58 @@ export class ContactsService {
 
     const mapped = mapAxceleratePayloadToContactData(payload);
 
-    return this.prisma.contact.upsert({
+    const contact = await this.prisma.contact.upsert({
       where: { contactId: mapped.contactId },
       create: mapped,
       update: mapped,
+      include: { user: true },
     });
+
+    // Auto-link user account if emailAddress exists and contact is not already linked
+    if (contact.emailAddress && contact.emailAddress.trim().length > 0 && !contact.user) {
+      const email = contact.emailAddress.trim().toLowerCase();
+
+      // Check if user with this email already exists
+      const existingUser = await this.prisma.user.findUnique({
+        where: { email },
+      });
+
+      if (existingUser) {
+        if (!existingUser.contactId || existingUser.contactId === contact.id) {
+          await this.prisma.user.update({
+            where: { id: existingUser.id },
+            data: {
+              contactId: contact.id,
+              axcelerateContactId: contact.contactId < 900000000 ? String(contact.contactId) : existingUser.axcelerateContactId,
+            },
+          });
+          this.logger.log(`Linked contact ID ${contact.id} (${email}) to existing user ID ${existingUser.id}`);
+        } else {
+          this.logger.warn(`User ${email} (ID: ${existingUser.id}) is already linked to Contact ID ${existingUser.contactId}. Skipped linking Contact ID ${contact.id}.`);
+        }
+      } else {
+        // Create new STUDENT role user
+        const name = [contact.givenName, contact.surname].filter(Boolean).join(' ') || 'Student User';
+        const rawPassword = 'LSFA' + Math.floor(100000 + Math.random() * 900000);
+        const bcrypt = await import('bcrypt');
+        const passwordHash = await bcrypt.hash(rawPassword, 10);
+
+        const newUser = await this.prisma.user.create({
+          data: {
+            email,
+            name,
+            passwordHash,
+            role: 'STUDENT',
+            isActive: true,
+            contactId: contact.id,
+            axcelerateContactId: contact.contactId < 900000000 ? String(contact.contactId) : null,
+          },
+        });
+        this.logger.log(`Created new STUDENT user ID ${newUser.id} (${email}) for contact ID ${contact.id}`);
+      }
+    }
+
+    return contact;
   }
 
   async getBulkSyncStatus() {
