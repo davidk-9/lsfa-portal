@@ -748,6 +748,27 @@ export class ContactsService {
     };
   }
 
+  async testAxcelerateLookup(contactId: number) {
+    this.logger.log(`Testing raw Axcelerate lookup for Contact ID: ${contactId}`);
+    try {
+      const payload = await this.axcelerate.getContactDetail(contactId);
+      return {
+        status: 'SUCCESS',
+        payload,
+      };
+    } catch (err: any) {
+      this.logger.error(`Axcelerate lookup error for Contact ID ${contactId}: ${err.message}`);
+      return {
+        status: 'ERROR',
+        message: err.message,
+        code: err.code,
+        statusResponse: err.response?.status,
+        statusText: err.response?.statusText,
+        responseData: err.response?.data,
+      };
+    }
+  }
+
   async syncSingleContactById(axId: number) {
     const payload = await this.axcelerate.getContactDetail(axId);
     if (!payload || !payload.CONTACTID) {

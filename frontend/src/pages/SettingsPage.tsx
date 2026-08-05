@@ -30,6 +30,7 @@ const KEYS = {
   API_TOKEN: 'axcelerate_api_token',
   WORKSHOP_URL: 'axcelerate_workshop_url',
   DEFAULT_CONTACT_ID: 'axcelerate_default_contact_id',
+  LOG_WEBHOOKS: 'log_webhooks',
   STEP1: 'trainer_step1_instruction',
   STEP2: 'trainer_step2_instruction',
   STEP3_ENABLED: 'trainer_step3_instruction_enabled',
@@ -207,6 +208,20 @@ function ApiCredentialsTab({ val, set }: { val: (k: string) => string; set: (k: 
               {showApi ? 'Hide' : 'Show'}
             </button>
           </div>
+        </SettingField>
+
+        <SettingField
+          label="Webhook Debug Logging"
+          hint="Enable printing full JSON payloads for incoming Axcelerate webhooks to backend console logs."
+        >
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
+            <input
+              type="checkbox"
+              checked={val(KEYS.LOG_WEBHOOKS) === 'true'}
+              onChange={(e) => set(KEYS.LOG_WEBHOOKS, e.target.checked ? 'true' : 'false')}
+            />
+            Log incoming webhooks
+          </label>
         </SettingField>
       </SettingSection>
 
@@ -1880,7 +1895,7 @@ function ContactUserSyncTab() {
           <p style={{ color: '#475569', fontSize: 14, marginTop: 0, marginBottom: 16, lineHeight: 1.6 }}>
             <strong>Routine Logic:</strong>
             <br />
-            1. Finds all contacts with an email address and at least one name (given name or surname).
+            1. Finds all contacts with an email address and at least one name (given name or surname), regardless of USI verification status.
             <br />
             2. Processes in chunked batches of 100 contacts to optimize memory performance.
             <br />
@@ -1948,7 +1963,7 @@ function ContactUserSyncTab() {
                 <h3 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#166534' }}>Sync Routine Completed Successfully</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
                   <div style={{ background: '#ffffff', padding: 12, borderRadius: 6, border: '1px solid #dcfce7' }}>
-                    <div style={{ fontSize: 12, color: '#64748b' }}>Total Verified Contacts</div>
+                    <div style={{ fontSize: 12, color: '#64748b' }}>Total Eligible Contacts</div>
                     <div style={{ fontSize: 20, fontWeight: 700, color: '#0f172a' }}>{result.summary.totalVerifiedContacts}</div>
                   </div>
                   <div style={{ background: '#ffffff', padding: 12, borderRadius: 6, border: '1px solid #dcfce7' }}>

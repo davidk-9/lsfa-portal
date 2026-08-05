@@ -107,6 +107,14 @@ export class ContactsController {
   }
 
   @UseGuards(RolesGuard)
+  @Roles('SUPER_USER', 'ADMIN')
+  @Post(':id/test-axcelerate-lookup')
+  async testAxcelerateLookup(@Request() req) {
+    const contactId = parseInt(req.params.id, 10);
+    return this.contactsService.testAxcelerateLookup(contactId);
+  }
+
+  @UseGuards(RolesGuard)
   @Roles('SUPER_USER')
   @Post('sync-users-usi')
   async syncUsersWithVerifiedUsi() {
