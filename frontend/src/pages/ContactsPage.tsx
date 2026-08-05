@@ -10,6 +10,7 @@ export function ContactsPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  const [status, setStatus] = useState('active');
   const [loading, setLoading] = useState(true);
 
   // Debounce search input so auto-filter happens as user types
@@ -21,10 +22,10 @@ export function ContactsPage() {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  const fetchContacts = async (p: number, s: string) => {
+  const fetchContacts = async (p: number, s: string, st: string) => {
     setLoading(true);
     try {
-      const res = await contactsApi.getPaginated(p, 20, s);
+      const res = await contactsApi.getPaginated(p, 20, s, st);
       setContacts(res.data.data);
       setTotal(res.data.total);
       setPage(res.data.page);
@@ -37,8 +38,8 @@ export function ContactsPage() {
   };
 
   useEffect(() => {
-    fetchContacts(page, search);
-  }, [page, search]);
+    fetchContacts(page, search, status);
+  }, [page, search, status]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,7 +62,7 @@ export function ContactsPage() {
         </div>
       </div>
 
-      <div className="users-filters" style={{ marginBottom: 16 }}>
+      <div className="users-filters" style={{ marginBottom: 16, display: 'flex', gap: 16, alignItems: 'center' }}>
         <form onSubmit={handleSearchSubmit} style={{ display: 'flex', gap: 8, width: '100%', maxWidth: 500 }}>
           <input
             type="text"
@@ -80,6 +81,19 @@ export function ContactsPage() {
             </button>
           )}
         </form>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <label style={{ fontSize: 13, color: '#64748b', fontWeight: 600 }}>Status:</label>
+          <select
+            value={status}
+            onChange={(e) => { setStatus(e.target.value); setPage(1); }}
+            style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, color: '#0f172a' }}
+          >
+            <option value="active">Active Only</option>
+            <option value="inactive">Inactive Only</option>
+            <option value="all">All Contacts</option>
+          </select>
+        </div>
       </div>
 
       {loading ? (

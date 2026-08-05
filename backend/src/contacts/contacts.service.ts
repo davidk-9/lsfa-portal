@@ -182,10 +182,17 @@ export class ContactsService {
     return contact;
   }
 
-  async getContactsPaginated(page: number = 1, limit: number = 20, search: string = '') {
+  async getContactsPaginated(page: number = 1, limit: number = 20, search: string = '', status: string = 'active') {
     const skip = (page - 1) * limit;
 
     const where: any = {};
+
+    if (status === 'active') {
+      where.contactActive = true;
+    } else if (status === 'inactive') {
+      where.contactActive = false;
+    }
+
     if (search.trim()) {
       const q = search.trim();
       const words = q.split(/\s+/).filter(Boolean);
@@ -376,6 +383,15 @@ export class ContactsService {
       data: updateData,
       include: { user: true },
     });
+
+    // If contactActive status changed on Contact, update linked User.isActive accordingly
+    if ('contactActive' in updateData && updated.user) {
+      await this.prisma.user.update({
+        where: { id: updated.user.id },
+        data: { isActive: Boolean(updateData.contactActive) },
+      });
+      this.logger.log(`Synced user ID ${updated.user.id} isActive to ${Boolean(updateData.contactActive)} due to Contact ID ${id} update`);
+    }
 
     // Best effort push to Axcelerate
     const axId = Number(contact.contactId);
@@ -748,25 +764,42 @@ export class ContactsService {
     };
   }
 
-  async testAxcelerateLookup(contactId: number) {
-    this.logger.log(`Testing raw Axcelerate lookup for Contact ID: ${contactId}`);
-    try {
-      const payload = await this.axcelerate.getContactDetail(contactId);
-      return {
-        status: 'SUCCESS',
-        payload,
-      };
-    } catch (err: any) {
-      this.logger.error(`Axcelerate lookup error for Contact ID ${contactId}: ${err.message}`);
-      return {
-        status: 'ERROR',
-        message: err.message,
-        code: err.code,
-        statusResponse: err.response?.status,
-        statusText: err.response?.statusText,
-        responseData: err.response?.data,
-      };
+  async handleMergedContacts(keptAxContactId: number, mergedAxContactIds: number[]) {
+    this.logger.log(`Handling merged contacts in webhook: Keeping Axcelerate Contact ID ${keptAxContactId}, deactivating merged IDs: ${mergedAxContactIds.join(', ')}`);
+
+    // 1. FIRST: Process all merged contacts: deactivate local contact records and their linked users
+    for (const mergedAxId of mergedAxContactIds) {
+      const mergedContact = await this.prisma.contact.findUnique({
+        where: { contactId: mergedAxId },
+        include: { user: true },
+      });
+
+      if (!mergedContact) {
+        this.logger.log(`Merged contact ID ${mergedAxId} not found in local DB. Skipping.`);
+        continue;
+      }
+
+      // Mark local merged contact as inactive
+      await this.prisma.contact.update({
+        where: { id: mergedContact.id },
+        data: { contactActive: false },
+      });
+
+      // If the merged contact was linked to a user account, deactivate it and clear contact link
+      if (mergedContact.user) {
+        await this.prisma.user.update({
+          where: { id: mergedContact.user.id },
+          data: {
+            isActive: false,
+            contactId: null,
+          },
+        });
+        this.logger.log(`Deactivated User ID ${mergedContact.user.id} previously linked to merged Contact ID ${mergedContact.id}`);
+      }
     }
+
+    // 2. SECOND: Sync & update/create the kept target contact from Axcelerate & link/reactivate its user
+    await this.syncSingleContactById(keptAxContactId);
   }
 
   async syncSingleContactById(axId: number) {

@@ -34,6 +34,7 @@ export function UsersPage() {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [selectedRole, setSelectedRole] = useState('');
+  const [status, setStatus] = useState('active');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -52,11 +53,11 @@ export function UsersPage() {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  const fetchUsers = async (p: number, s: string, r: string) => {
+  const fetchUsers = async (p: number, s: string, r: string, st: string) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await usersApi.getPaginated(p, 20, s, r);
+      const res = await usersApi.getPaginated(p, 20, s, r, st);
       setUsers(res.data.data);
       setTotal(res.data.total);
       setPage(res.data.page);
@@ -69,8 +70,8 @@ export function UsersPage() {
   };
 
   useEffect(() => {
-    fetchUsers(page, search, selectedRole);
-  }, [page, search, selectedRole]);
+    fetchUsers(page, search, selectedRole, status);
+  }, [page, search, selectedRole, status]);
 
   const handleSearchSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -82,6 +83,7 @@ export function UsersPage() {
     setSearchInput('');
     setSearch('');
     setSelectedRole('');
+    setStatus('active');
     setPage(1);
   };
 
@@ -158,7 +160,7 @@ export function UsersPage() {
       }
 
       closeModal();
-      fetchUsers(page, search, selectedRole);
+      fetchUsers(page, search, selectedRole, status);
     } catch (err: any) {
       setError(err.response?.data?.message || 'Unable to save user.');
     } finally {
@@ -176,7 +178,7 @@ export function UsersPage() {
       } else {
         await usersApi.restore(user.id);
       }
-      fetchUsers(page, search, selectedRole);
+      fetchUsers(page, search, selectedRole, status);
     } catch (err: any) {
       setError(err.response?.data?.message || `Unable to ${user.isActive ? 'archive' : 'restore'} user.`);
     } finally {
@@ -249,7 +251,26 @@ export function UsersPage() {
           <option value="STUDENT">Student</option>
         </select>
 
-        {(searchInput || selectedRole) && (
+        <select
+          value={status}
+          onChange={(e) => {
+            setStatus(e.target.value);
+            setPage(1);
+          }}
+          style={{
+            padding: '8px 12px',
+            borderRadius: 6,
+            border: '1px solid #cbd5e1',
+            fontSize: 14,
+            background: '#ffffff',
+          }}
+        >
+          <option value="active">Active Only</option>
+          <option value="inactive">Archived / Inactive Only</option>
+          <option value="all">All Users</option>
+        </select>
+
+        {(searchInput || selectedRole || status !== 'active') && (
           <button
             type="button"
             onClick={handleClearFilters}

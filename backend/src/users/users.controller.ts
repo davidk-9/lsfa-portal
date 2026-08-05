@@ -28,10 +28,11 @@ export class UsersController {
     @Query('limit') limit?: string,
     @Query('search') search?: string,
     @Query('role') role?: string,
+    @Query('status') status?: string,
   ) {
     const pageNum = page ? parseInt(page, 10) : 1;
     const limitNum = limit ? parseInt(limit, 10) : 20;
-    return this.usersService.findAllPaginated(pageNum, limitNum, search, role);
+    return this.usersService.findAllPaginated(pageNum, limitNum, search, role, status || 'active');
   }
 
   @Get('trainers')

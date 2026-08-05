@@ -29,11 +29,22 @@ export class WebhooksController {
 
     const type = body?.type;
     const contactId = body?.message?.contact?.id;
+    const mergedContactIds: number[] = Array.isArray(body?.message?.mergedContactIds)
+      ? body.message.mergedContactIds.map(Number).filter(Boolean)
+      : [];
 
-    if (type === 'contact.contact_merged' && shouldLog) {
-      this.logger.warn('=== MERGED CONTACT WEBHOOK RECEIVED ===');
-      this.logger.warn(JSON.stringify(body, null, 2));
-      this.logger.warn('========================================');
+    if (type === 'contact.contact_merged') {
+      if (shouldLog) {
+        this.logger.warn('=== MERGED CONTACT WEBHOOK RECEIVED ===');
+        this.logger.warn(JSON.stringify(body, null, 2));
+        this.logger.warn('========================================');
+      }
+
+      if (contactId && mergedContactIds.length > 0) {
+        this.contactsService.handleMergedContacts(contactId, mergedContactIds).catch(err => {
+          this.logger.error(`Failed to handle merged contacts for target ${contactId}: ${err.message}`);
+        });
+      }
     }
 
     if (contactId && (type === 'contact.contact_created' || type === 'contact.contact_updated' || type === 'contact.contact_merged' || type === 'contact.contact_deleted')) {

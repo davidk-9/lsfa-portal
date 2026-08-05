@@ -23,8 +23,8 @@ export const authApi = {
 
 export const usersApi = {
   list: () => api.get('/users'),
-  getPaginated: (page: number = 1, limit: number = 20, search: string = '', role: string = '') =>
-    api.get('/users', { params: { page, limit, search, role } }),
+  getPaginated: (page: number = 1, limit: number = 20, search: string = '', role: string = '', status: string = 'active') =>
+    api.get('/users', { params: { page, limit, search, role, status } }),
   listTrainers: () => api.get('/users/trainers'),
   get: (id: number) => api.get(`/users/${id}`),
   create: (data: object) => api.post('/users', data),
@@ -40,8 +40,8 @@ export const contactsApi = {
   updateMyContact: (data: object) => api.patch('/contacts/me', data),
   syncAxcelerate: (axcelerateContactId?: number) => api.post('/contacts/sync-axcelerate', { axcelerateContactId }),
   
-  getPaginated: (page: number = 1, limit: number = 20, search: string = '') =>
-    api.get('/contacts', { params: { page, limit, search } }),
+  getPaginated: (page: number = 1, limit: number = 20, search: string = '', status: string = 'active') =>
+    api.get('/contacts', { params: { page, limit, search, status } }),
   getById: (id: number) => api.get(`/contacts/${id}`),
   updateById: (id: number, data: object) => api.patch(`/contacts/${id}`, data),
   syncAxcelerateForContact: (id: number) => api.post(`/contacts/${id}/sync-axcelerate`),

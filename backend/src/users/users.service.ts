@@ -30,9 +30,15 @@ export class UsersService {
     });
   }
 
-  async findAllPaginated(page: number = 1, limit: number = 20, search: string = '', role?: string) {
+  async findAllPaginated(page: number = 1, limit: number = 20, search: string = '', role?: string, status: string = 'active') {
     const skip = (page - 1) * limit;
     const where: any = {};
+
+    if (status === 'active') {
+      where.isActive = true;
+    } else if (status === 'inactive') {
+      where.isActive = false;
+    }
 
     if (role && role.trim()) {
       where.role = role.trim();
@@ -149,7 +155,7 @@ export class UsersService {
 
   async update(id: number, dto: UpdateUserDto) {
     await this.findById(id);
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id },
       data: dto,
       select: {
@@ -159,23 +165,47 @@ export class UsersService {
         role: true,
         isActive: true,
         axcelerateContactId: true,
+        contactId: true,
         createdAt: true,
       },
     });
+
+    if ('isActive' in dto && updated.contactId) {
+      await this.prisma.contact.update({
+        where: { id: updated.contactId },
+        data: { contactActive: Boolean(dto.isActive) },
+      });
+    }
+
+    return updated;
   }
 
   async archive(id: number) {
-    return this.prisma.user.update({
+    const user = await this.prisma.user.update({
       where: { id },
       data: { isActive: false },
     });
+    if (user.contactId) {
+      await this.prisma.contact.update({
+        where: { id: user.contactId },
+        data: { contactActive: false },
+      });
+    }
+    return user;
   }
 
   async restore(id: number) {
-    return this.prisma.user.update({
+    const user = await this.prisma.user.update({
       where: { id },
       data: { isActive: true },
     });
+    if (user.contactId) {
+      await this.prisma.contact.update({
+        where: { id: user.contactId },
+        data: { contactActive: true },
+      });
+    }
+    return user;
   }
 
   async deactivate(id: number) {

@@ -36,7 +36,8 @@ export class ContactsController {
     const page = parseInt(req.query.page as string || '1', 10);
     const limit = parseInt(req.query.limit as string || '20', 10);
     const search = req.query.search as string || '';
-    return this.contactsService.getContactsPaginated(page, limit, search);
+    const status = req.query.status as string || 'active';
+    return this.contactsService.getContactsPaginated(page, limit, search, status);
   }
 
   @UseGuards(RolesGuard)
@@ -104,14 +105,6 @@ export class ContactsController {
   @Post('sync-axcelerate')
   syncAxcelerate(@Request() req, @Body('axcelerateContactId') targetId?: number) {
     return this.contactsService.syncAxcelerateForUser(req.user.id, targetId);
-  }
-
-  @UseGuards(RolesGuard)
-  @Roles('SUPER_USER', 'ADMIN')
-  @Post(':id/test-axcelerate-lookup')
-  async testAxcelerateLookup(@Request() req) {
-    const contactId = parseInt(req.params.id, 10);
-    return this.contactsService.testAxcelerateLookup(contactId);
   }
 
   @UseGuards(RolesGuard)
