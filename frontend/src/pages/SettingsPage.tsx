@@ -1757,6 +1757,7 @@ function AxcelerateSyncSection() {
 // ─── Tab: Contact User Sync ───────────────────────────────────────────────────
 
 function ContactUserSyncTab() {
+  const [verifyAxcelerate, setVerifyAxcelerate] = useState(false);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<{
     totalVerifiedContacts: number;
@@ -1764,6 +1765,7 @@ function ContactUserSyncTab() {
     linkedExistingCount: number;
     createdCount: number;
     skippedAlreadyLinkedCount: number;
+    deactivatedCount?: number;
     conflictCount: number;
   } | null>(null);
   const [result, setResult] = useState<{
@@ -1773,6 +1775,7 @@ function ContactUserSyncTab() {
       linkedExistingCount: number;
       createdCount: number;
       skippedAlreadyLinkedCount: number;
+      deactivatedCount?: number;
       conflictCount: number;
     };
     conflicts: Array<{
@@ -1792,7 +1795,11 @@ function ContactUserSyncTab() {
   }, []);
 
   const handleRunSync = async () => {
-    if (!confirm('Run Contact-to-User Sync? This will create or link user accounts for all contacts with an email address and name.')) {
+    const promptMsg = verifyAxcelerate
+      ? 'Run Contact-to-User Sync WITH Axcelerate direct API verification? This will query Axcelerate for each contact and deactivate local contacts/users if deleted in Axcelerate.'
+      : 'Run Contact-to-User Sync? This will create or link user accounts for all contacts with an email address and name.';
+
+    if (!confirm(promptMsg)) {
       return;
     }
 
@@ -1808,7 +1815,8 @@ function ContactUserSyncTab() {
     abortRef.current = ctrl;
 
     try {
-      const response = await fetch(`${baseURL}/contacts/sync-users-usi-stream`, {
+      const queryParam = verifyAxcelerate ? '?verifyAxcelerate=true' : '';
+      const response = await fetch(`${baseURL}/contacts/sync-users-usi-stream${queryParam}`, {
         headers: { Authorization: `Bearer ${token ?? ''}` },
         signal: ctrl.signal,
       });
@@ -1839,6 +1847,7 @@ function ContactUserSyncTab() {
                   linkedExistingCount: 0,
                   createdCount: 0,
                   skippedAlreadyLinkedCount: 0,
+                  deactivatedCount: 0,
                   conflictCount: 0,
                 });
               } else if (event.type === 'progress') {
@@ -1848,6 +1857,7 @@ function ContactUserSyncTab() {
                   linkedExistingCount: event.linkedExistingCount,
                   createdCount: event.createdCount,
                   skippedAlreadyLinkedCount: event.skippedAlreadyLinkedCount,
+                  deactivatedCount: event.deactivatedCount || 0,
                   conflictCount: event.conflictCount,
                 });
               } else if (event.type === 'complete') {
@@ -1861,6 +1871,7 @@ function ContactUserSyncTab() {
                   linkedExistingCount: event.summary.linkedExistingCount,
                   createdCount: event.summary.createdCount,
                   skippedAlreadyLinkedCount: event.summary.skippedAlreadyLinkedCount,
+                  deactivatedCount: event.summary.deactivatedCount || 0,
                   conflictCount: event.summary.conflictCount,
                 });
               }
@@ -1910,6 +1921,21 @@ function ContactUserSyncTab() {
             5. If no user exists, it creates a new <code>STUDENT</code> user account for that contact with a temporary password and links them.
           </p>
 
+          <div style={{ marginBottom: 16, background: '#f8fafc', padding: 12, borderRadius: 6, border: '1px solid #cbd5e1' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontWeight: 600, fontSize: 13, color: '#0f172a' }}>
+              <input
+                type="checkbox"
+                checked={verifyAxcelerate}
+                onChange={(e) => setVerifyAxcelerate(e.target.checked)}
+                disabled={running}
+              />
+              Verify & Reconcile with Axcelerate API (checks for deleted / inactive contacts)
+            </label>
+            <div style={{ fontSize: 12, color: '#64748b', marginTop: 4, marginLeft: 24 }}>
+              When enabled, queries Axcelerate directly for every contact. If Axcelerate returns permission error or inactive status, local contact and user accounts are marked inactive.
+            </div>
+          </div>
+
           <button
             type="button"
             onClick={handleRunSync}
@@ -1946,6 +1972,9 @@ function ContactUserSyncTab() {
                 <span>Linked Existing: <strong style={{ color: '#2563eb' }}>{progress.linkedExistingCount}</strong></span>
                 <span>Created New: <strong style={{ color: '#16a34a' }}>{progress.createdCount}</strong></span>
                 <span>Skipped: <strong style={{ color: '#64748b' }}>{progress.skippedAlreadyLinkedCount}</strong></span>
+                {progress.deactivatedCount !== undefined && progress.deactivatedCount > 0 && (
+                  <span>Deactivated: <strong style={{ color: '#dc2626' }}>{progress.deactivatedCount}</strong></span>
+                )}
                 <span>Conflicts: <strong style={{ color: progress.conflictCount > 0 ? '#dc2626' : '#16a34a' }}>{progress.conflictCount}</strong></span>
               </div>
             </div>
