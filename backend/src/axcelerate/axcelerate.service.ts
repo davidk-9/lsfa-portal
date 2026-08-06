@@ -183,7 +183,20 @@ export class AxcelerateService {
     const client = await this.getClient();
     const url = `contact/${contactId}`;
     this.logger.log(`Updating Axcelerate contact ${contactId} via PUT ${url} with params: ${Object.keys(params).join(', ')}`);
-    const res = await client.put(url, {}, { params });
+    try {
+      const res = await client.put(url, {}, { params });
+      return res.data;
+    } catch (err: any) {
+      const status = err?.response?.status || 'Unknown';
+      const details = err?.response?.data?.DETAILS || err?.response?.data?.MSG || err?.response?.data || err?.message;
+      this.logger.error(`Axcelerate PUT contact/${contactId} failed (${status}): ${typeof details === 'object' ? JSON.stringify(details) : details}`);
+      throw err;
+    }
+  }
+
+  async verifyUSI(contactId: number): Promise<any> {
+    const client = await this.getClient();
+    const res = await client.post('contact/verifyUSI', {}, { params: { contactID: contactId } });
     return res.data;
   }
 

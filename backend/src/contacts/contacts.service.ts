@@ -430,6 +430,63 @@ export class ContactsService {
     });
   }
 
+  async verifyUsiForContact(id: number, usi?: string) {
+    const contact = await this.prisma.contact.findUnique({ where: { id } });
+    if (!contact) throw new NotFoundException(`Contact with ID ${id} not found`);
+
+    let currentUsi = contact.usi;
+    if (usi !== undefined && usi.trim() !== '') {
+      currentUsi = usi.trim().toUpperCase();
+      await this.prisma.contact.update({
+        where: { id },
+        data: { usi: currentUsi, usiVerified: false },
+      });
+    }
+
+    if (!currentUsi) {
+      throw new BadRequestException('Contact does not have a USI provided');
+    }
+
+    const axId = Number(contact.contactId);
+    if (!axId || axId >= 900000000) {
+      throw new BadRequestException('Contact does not have a valid Axcelerate Contact ID');
+    }
+
+    // Push updated contact details & USI to Axcelerate first
+    try {
+      const updatedContact = await this.prisma.contact.findUnique({ where: { id } });
+      const axParams = mapContactDataToAxcelerateParams(updatedContact);
+      await this.axcelerate.updateContact(axId, axParams);
+    } catch (err: any) {
+      const errDetails = err?.response?.data?.DETAILS || err?.response?.data?.MSG || err?.response?.data?.message || err?.message || 'Failed to update contact on Axcelerate';
+      const formattedErr = typeof errDetails === 'object' ? JSON.stringify(errDetails) : String(errDetails);
+      this.logger.error(`Failed to push contact ${id} update to Axcelerate before USI verification: ${formattedErr}`);
+      throw new BadRequestException(`Failed to sync contact update with Axcelerate: ${formattedErr}`);
+    }
+
+    let res: any;
+    try {
+      res = await this.axcelerate.verifyUSI(axId);
+      this.logger.log(`Axcelerate USI verification response for contact ${axId}: ${JSON.stringify(res)}`);
+    } catch (err: any) {
+      this.logger.error(`Failed to execute USI verification for contact ${axId}: ${err?.message}`);
+      throw new BadRequestException(err?.response?.data?.message || err?.message || 'Failed to call Axcelerate USI Verification service');
+    }
+
+    const isVerified = Boolean(res?.USI_VERIFIED);
+
+    await this.prisma.contact.update({
+      where: { id },
+      data: { usiVerified: isVerified },
+    });
+
+    return {
+      verified: isVerified,
+      data: res?.DATA ?? null,
+      msg: res?.MSG ?? (isVerified ? 'USI verified successfully' : 'USI verification failed'),
+    };
+  }
+
   async linkUserToContact(contactId: number, userId: number) {
     const contact = await this.prisma.contact.findUnique({ where: { id: contactId } });
     if (!contact) throw new NotFoundException(`Contact ${contactId} not found`);
@@ -1064,6 +1121,8 @@ function mapContactDataToAxcelerateParams(c: any): Record<string, any> {
   if (c.workPhone) params.workphone = c.workPhone;
 
   if (c.usi) params.USI = c.usi;
+  if (c.usiVerified != null) params.USI_VERIFIED = c.usiVerified;
+  if (c.usiExemption != null) params.USI_EXEMPTION = c.usiExemption;
   if (c.historicClientId) params.HistoricClientID = c.historicClientId;
   if (c.vsn) params.VSN = c.vsn;
   if (c.lui) params.LUI = c.lui;
@@ -1101,7 +1160,10 @@ function mapContactDataToAxcelerateParams(c: any): Record<string, any> {
 
   if (c.highestSchoolLevelId) params.HighestSchoolLevelID = c.highestSchoolLevelId;
   if (c.highestSchoolLevelYear) params.HighestSchoolLevelYear = c.highestSchoolLevelYear;
+  if (c.atSchoolFlag != null) params.AtSchoolFlag = c.atSchoolFlag;
   if (c.labourForceId) params.LabourForceID = c.labourForceId;
+  if (c.customFieldCJobTitle) params.customField_c_jobtitle = c.customFieldCJobTitle;
+  if (c.customFieldJobTitle) params.customField_s_jobtitle = c.customFieldJobTitle;
 
   if (c.priorEducationStatus != null) params.PriorEducationStatus = c.priorEducationStatus;
   if (Array.isArray(c.priorEducationIds) && c.priorEducationIds.length > 0) {
@@ -1116,6 +1178,21 @@ function mapContactDataToAxcelerateParams(c: any): Record<string, any> {
   if (c.emergencyContact) params.EmergencyContact = c.emergencyContact;
   if (c.emergencyContactRelation) params.EmergencyContactRelation = c.emergencyContactRelation;
   if (c.emergencyContactPhone) params.EmergencyContactPhone = c.emergencyContactPhone;
+
+  if (c.customFieldAdditionalSupport != null) params.customField_b_additionalsupport = c.customFieldAdditionalSupport;
+  if (c.customFieldAdditionalSupportRequired != null) params.customField_s_additionalsupportrequired = c.customFieldAdditionalSupportRequired;
+  if (c.customFieldCombinedDeclaration != null) params.customField_b_combineddeclaration = c.customFieldCombinedDeclaration;
+  if (c.customFieldMarketingPermission != null) params.customField_b_marketingpermission = c.customFieldMarketingPermission;
+
+  if (c.customFieldUsiPermission) params.customField_b_usipermission = c.customFieldUsiPermission;
+  if (c.customFieldWellbeingRequirements) params.customField_s_wellbeingrequirements = c.customFieldWellbeingRequirements;
+  if (Array.isArray(c.customFieldPreviousCerts) && c.customFieldPreviousCerts.length > 0) {
+    params.customField_c_previouscerts = c.customFieldPreviousCerts.join(',');
+  }
+  if (Array.isArray(c.customFieldPreviousJobTitles) && c.customFieldPreviousJobTitles.length > 0) {
+    params.customField_c_previousjobtitles = c.customFieldPreviousJobTitles.join(',');
+  }
+  if (c.customFieldPreviousJobTitlesOther) params.customField_s_previousjobtitlesother = c.customFieldPreviousJobTitlesOther;
 
   return params;
 }

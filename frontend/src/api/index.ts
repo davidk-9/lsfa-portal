@@ -39,12 +39,14 @@ export const contactsApi = {
   getMyContact: () => api.get('/contacts/me'),
   updateMyContact: (data: object) => api.patch('/contacts/me', data),
   syncAxcelerate: (axcelerateContactId?: number) => api.post('/contacts/sync-axcelerate', { axcelerateContactId }),
+  verifyMyUsi: (usi?: string) => api.post('/contacts/me/verify-usi', { usi }),
   
   getPaginated: (page: number = 1, limit: number = 20, search: string = '', status: string = 'active') =>
     api.get('/contacts', { params: { page, limit, search, status } }),
   getById: (id: number) => api.get(`/contacts/${id}`),
   updateById: (id: number, data: object) => api.patch(`/contacts/${id}`, data),
   syncAxcelerateForContact: (id: number) => api.post(`/contacts/${id}/sync-axcelerate`),
+  verifyContactUsi: (id: number, usi?: string) => api.post(`/contacts/${id}/verify-usi`, { usi }),
   searchQuick: (q: string, limit: number = 10) => api.get('/contacts/search', { params: { q, limit } }),
   linkUser: (contactId: number, userId: number) => api.post(`/contacts/${contactId}/link-user`, { userId }),
   unlinkUser: (contactId: number) => api.post(`/contacts/${contactId}/unlink-user`),

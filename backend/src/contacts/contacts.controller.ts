@@ -20,6 +20,12 @@ export class ContactsController {
     return this.contactsService.updateContactForUser(req.user.id, body);
   }
 
+  @Post('me/verify-usi')
+  async verifyMyUsi(@Request() req, @Body('usi') usi?: string) {
+    const contact = await this.contactsService.getContactForUser(req.user.id);
+    return this.contactsService.verifyUsiForContact(contact.id, usi);
+  }
+
   @UseGuards(RolesGuard)
   @Roles('SUPER_USER', 'ADMIN')
   @Get('search')
@@ -77,6 +83,14 @@ export class ContactsController {
   syncContactAxcelerate(@Request() req) {
     const id = parseInt(req.params.id, 10);
     return this.contactsService.syncAxcelerateForContact(id);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles('SUPER_USER', 'ADMIN')
+  @Post(':id/verify-usi')
+  verifyContactUsi(@Request() req, @Body('usi') usi?: string) {
+    const id = parseInt(req.params.id, 10);
+    return this.contactsService.verifyUsiForContact(id, usi);
   }
 
   @UseGuards(RolesGuard)
