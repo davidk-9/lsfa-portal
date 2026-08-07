@@ -4,7 +4,7 @@ import { settingsApi } from '../api';
 import './SettingsPage.css';
 import api from '../api/client';
 
-type TabId = 'api' | 'course-codes' | 'trainer-portal' | 'azure-storage' | 'checklists' | 'practical-tasks' | 'success-comments' | 'ai' | 'wp-sync' | 'contact-user-sync';
+type TabId = 'api' | 'course-codes' | 'trainer-portal' | 'azure-storage' | 'checklists' | 'practical-tasks' | 'success-comments' | 'ai' | 'wp-sync' | 'contact-user-sync' | 'auto-login';
 
 interface Tab {
   id: TabId;
@@ -22,6 +22,7 @@ const TABS: Tab[] = [
   { id: 'ai', label: 'AI Evidence' },
   { id: 'wp-sync', label: 'WordPress Sync' },
   { id: 'contact-user-sync', label: 'Contact User Sync' },
+  { id: 'auto-login', label: 'Auto Login' },
 ];
 
 // Setting keys
@@ -55,6 +56,7 @@ const KEYS = {
   AI_RENDER_QUALITY: 'ai_render_quality',
   WP_SYNC_URL: 'wp_sync_url',
   WP_SYNC_TOKEN: 'wp_sync_token',
+  AUTO_LOGIN_REQUIRE_MFA: 'auto_login_require_mfa',
 };
 
 export function SettingsPage() {
@@ -153,6 +155,9 @@ export function SettingsPage() {
           )}
           {activeTab === 'contact-user-sync' && (
             <ContactUserSyncTab />
+          )}
+          {activeTab === 'auto-login' && (
+            <AutoLoginTab val={val} set={set} />
           )}
         </div>
       </div>
@@ -2096,6 +2101,155 @@ function ContactUserSyncTab() {
             </div>
           )}
         </div>
+      </SettingSection>
+    </div>
+  );
+}
+
+// ─── Tab: Auto Login & Magic Links ─────────────────────────────────────────────
+
+function AutoLoginTab({ val, set }: { val: (k: string) => string; set: (k: string, v: string) => void }) {
+  const [syncToAxcelerate, setSyncToAxcelerate] = useState(true);
+  const [forceRegenerate, setForceRegenerate] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<{
+    totalUsers: number;
+    tokensGenerated: number;
+    axcelerateSynced: number;
+    axcelerateFailed: number;
+    errors: string[];
+  } | null>(null);
+
+  const handleBulkGenerate = async () => {
+    setRunning(true);
+    setResult(null);
+    try {
+      const res = await settingsApi.bulkGenerateMagicLinks({
+        syncToAxcelerate,
+        forceRegenerate,
+      });
+      setResult(res.data);
+    } catch (err: any) {
+      alert('Bulk generation failed: ' + (err?.response?.data?.message || err.message));
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="tab-panel">
+      <h2>Auto Login & Magic Links</h2>
+      <p className="tab-description">
+        Configure automatic login rules, public base URL, and bulk generate/sync magic link tokens to Axcelerate contacts.
+      </p>
+
+      <SettingSection title="Public Base URL">
+        <SettingField
+          label="Base Domain / URL"
+          hint="The base URL used when constructing full magic link URLs (e.g. https://lsfa.klefen.com.au or http://localhost:5173)."
+        >
+          <input
+            type="text"
+            value={val(KEYS.PUBLIC_BASE_URL)}
+            onChange={(e) => set(KEYS.PUBLIC_BASE_URL, e.target.value)}
+            placeholder="https://lsfa.klefen.com.au"
+            className="setting-input"
+          />
+        </SettingField>
+      </SettingSection>
+
+      <SettingSection title="MFA Security Settings">
+        <SettingField
+          label="Student Auto-Login MFA"
+          hint="Control whether student magic links require an MFA code step."
+        >
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
+            <input
+              type="checkbox"
+              checked={val(KEYS.AUTO_LOGIN_REQUIRE_MFA) === 'true'}
+              onChange={(e) => set(KEYS.AUTO_LOGIN_REQUIRE_MFA, e.target.checked ? 'true' : 'false')}
+              style={{ width: 18, height: 18 }}
+            />
+            Require MFA verification code step for Student auto-login
+          </label>
+          <p style={{ marginTop: 8, fontSize: 13, color: '#64748b', lineHeight: 1.4 }}>
+            <em>Note: Non-student roles (Trainers, Admins, Super Users) will always require MFA verification code when using a magic link.</em>
+          </p>
+        </SettingField>
+      </SettingSection>
+
+      <SettingSection title="Bulk Magic Link Tool">
+        <SettingField
+          label="Bulk Create & Sync Magic Links"
+          hint="Generate 64-character magic link tokens for active users in the local database and optionally sync full magic links to Axcelerate contact custom field u_lsfalink."
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
+              <input
+                type="checkbox"
+                checked={syncToAxcelerate}
+                onChange={(e) => setSyncToAxcelerate(e.target.checked)}
+                style={{ width: 16, height: 16 }}
+              />
+              Write / Sync full magic links to Axcelerate contact custom field (<code>u_lsfalink</code>)
+            </label>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
+              <input
+                type="checkbox"
+                checked={forceRegenerate}
+                onChange={(e) => setForceRegenerate(e.target.checked)}
+                style={{ width: 16, height: 16 }}
+              />
+              Force regenerate new magic tokens for users who already have one
+            </label>
+          </div>
+
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={handleBulkGenerate}
+            disabled={running}
+            style={{ padding: '10px 20px', fontWeight: 600 }}
+          >
+            {running ? 'Processing Bulk Generation...' : 'Generate & Sync Magic Links'}
+          </button>
+
+          {running && (
+            <div style={{ marginTop: 16, color: '#0284c7', fontWeight: 500 }}>
+              ⏳ Bulk generating and syncing magic links with Axcelerate rate-limit throttling (~180 req/min). Please wait...
+            </div>
+          )}
+
+          {result && (
+            <div style={{ marginTop: 20, padding: 16, background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 6 }}>
+              <h4 style={{ margin: '0 0 10px 0', fontSize: 15, color: '#0f172a' }}>
+                ✓ Bulk Process Completed
+              </h4>
+              <ul style={{ margin: 0, paddingLeft: 20, fontSize: 14, color: '#334155', lineHeight: 1.6 }}>
+                <li><strong>Total Active Users Examined:</strong> {result.totalUsers}</li>
+                <li><strong>Magic Link Tokens Created:</strong> {result.tokensGenerated}</li>
+                {syncToAxcelerate && (
+                  <>
+                    <li><strong>Axcelerate Contacts Synced:</strong> {result.axcelerateSynced}</li>
+                    <li><strong>Axcelerate Sync Failures:</strong> {result.axcelerateFailed}</li>
+                  </>
+                )}
+              </ul>
+
+              {result.errors && result.errors.length > 0 && (
+                <div style={{ marginTop: 14 }}>
+                  <strong style={{ color: '#dc2626', fontSize: 13 }}>Sync Errors ({result.errors.length}):</strong>
+                  <ul style={{ margin: '6px 0 0 0', paddingLeft: 20, fontSize: 12, color: '#dc2626', maxHeight: 150, overflowY: 'auto' }}>
+                    {result.errors.map((err, idx) => (
+                      <li key={idx}>{err}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </SettingField>
       </SettingSection>
     </div>
   );

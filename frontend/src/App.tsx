@@ -2,8 +2,10 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { StudentOnboardingGuard } from './components/StudentOnboardingGuard';
 import { AppLayout } from './components/AppLayout';
 import { LoginPage } from './pages/LoginPage';
+import { AutoLogPage } from './pages/AutoLogPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { AdminCalendarPage } from './pages/AdminCalendarPage';
@@ -25,12 +27,15 @@ function App() {
         <AuthProvider>
           <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/autolog" element={<AutoLogPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route
             path="/"
             element={
               <ProtectedRoute>
-                <AppLayout />
+                <StudentOnboardingGuard>
+                  <AppLayout />
+                </StudentOnboardingGuard>
               </ProtectedRoute>
             }
           >

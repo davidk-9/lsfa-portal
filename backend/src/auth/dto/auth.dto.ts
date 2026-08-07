@@ -13,6 +13,12 @@ export class LoginDto {
   deviceToken?: string;
 }
 
+export class MagicLoginDto {
+  @IsString()
+  @IsNotEmpty()
+  token: string;
+}
+
 export class VerifyMfaDto {
   @IsEmail()
   email: string;

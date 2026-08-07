@@ -20,6 +20,7 @@ model User {
   mfaExpiresAt            DateTime?
   resetPasswordToken      String?
   resetPasswordExpiresAt  DateTime?
+  magicToken              String?         @unique
   axcelerateContactId     String?
   createdAt               DateTime        @default(now())
   updatedAt               DateTime        @updatedAt
@@ -289,6 +290,7 @@ model Contact {
   customFieldPreviousCerts               String[] @default([])
   customFieldParentGuardianRelationship  String?
   customFieldWellbeingRequirements       String?
+  customFieldULsfaLink                   String?
   lastUpdated                            String?
   contactEntryDate                       String?
   contactActive                          Boolean? @default(true)

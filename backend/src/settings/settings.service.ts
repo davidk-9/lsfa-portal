@@ -1,9 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, forwardRef } from '@nestjs/common';
+import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { AxcelerateService } from '../axcelerate/axcelerate.service';
 
 @Injectable()
 export class SettingsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Inject(forwardRef(() => AxcelerateService))
+    private axcelerateService: AxcelerateService,
+  ) {}
 
   async getAll(): Promise<Record<string, string>> {
     const rows = await this.prisma.setting.findMany();
@@ -107,5 +113,108 @@ export class SettingsService {
         },
       }).catch(() => {});
     }
+  }
+
+  // ── Auto-Login / Magic Link Bulk Generation ─────────────────────────────────
+
+  async bulkGenerateMagicLinks(options: { syncToAxcelerate?: boolean; forceRegenerate?: boolean }) {
+    const syncToAxcelerate = !!options.syncToAxcelerate;
+    const forceRegenerate = !!options.forceRegenerate;
+
+    // Get public base URL from settings or config
+    let baseUrl = await this.get('public_base_url');
+    if (!baseUrl) {
+      baseUrl = 'https://lsfa.klefen.com.au';
+    }
+    baseUrl = baseUrl.trim().replace(/\/+$/, '');
+
+    // Fetch active users
+    const users = await this.prisma.user.findMany({
+      where: { isActive: true },
+      include: { contact: true },
+    });
+
+    let tokensGenerated = 0;
+    let axcelerateSynced = 0;
+    let axcelerateFailed = 0;
+    const errors: string[] = [];
+
+    for (const user of users) {
+      let token = user.magicToken;
+
+      // Generate new token if missing or forced
+      if (!token || forceRegenerate) {
+        token = crypto.randomBytes(32).toString('hex'); // 64 hex chars
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: { magicToken: token },
+        });
+        tokensGenerated++;
+      }
+
+      const fullMagicLink = `${baseUrl}/autolog?key=${token}`;
+
+      // Sync to Axcelerate if requested
+      if (syncToAxcelerate) {
+        // Find contact ID (either from user.axcelerateContactId or user.contact.contactId)
+        let rawContactId = user.axcelerateContactId;
+        if (!rawContactId && user.contact?.contactId) {
+          rawContactId = String(user.contact.contactId);
+        }
+
+        const axContactId = rawContactId ? parseInt(rawContactId, 10) : null;
+
+        if (axContactId && axContactId > 0) {
+          // Rate-limit throttle: 335ms delay enforces ~180 requests/minute max (3 req/sec)
+          await new Promise((res) => setTimeout(res, 335));
+
+          let attempts = 0;
+          let success = false;
+
+          while (!success && attempts < 3) {
+            attempts++;
+            try {
+              await this.axcelerateService.updateContact(axContactId, {
+                customField_u_lsfalink: fullMagicLink,
+              });
+              success = true;
+              axcelerateSynced++;
+
+              // Also update local Contact record if exists
+              if (user.contact) {
+                await this.prisma.contact.update({
+                  where: { id: user.contact.id },
+                  data: { customFieldULsfaLink: fullMagicLink },
+                });
+              }
+            } catch (err: any) {
+              const status = err?.status || err?.response?.status;
+              const isRateLimited = status === 429;
+
+              if (isRateLimited) {
+                const retryAfterHeader = err?.response?.headers?.['retry-after'];
+                const waitSeconds = retryAfterHeader ? parseInt(retryAfterHeader, 10) + 1 : 10;
+                await new Promise((res) => setTimeout(res, waitSeconds * 1000));
+                continue;
+              }
+
+              const errMsg = err?.response?.data?.DETAILS || err?.message || 'Unknown error';
+              errors.push(`User ID ${user.id} (Axcelerate Contact ${axContactId}): ${errMsg}`);
+              axcelerateFailed++;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    return {
+      success: true,
+      totalUsers: users.length,
+      tokensGenerated,
+      axcelerateSynced,
+      axcelerateFailed,
+      errors,
+    };
   }
 }

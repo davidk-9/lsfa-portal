@@ -1,6 +1,6 @@
 import { Controller, Post, Body, Request, UseGuards, Get } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { LoginDto, VerifyMfaDto, ImpersonateDto, ForgotPasswordDto, ResetPasswordDto } from './dto/auth.dto';
+import { LoginDto, VerifyMfaDto, ImpersonateDto, ForgotPasswordDto, ResetPasswordDto, MagicLoginDto } from './dto/auth.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { Roles } from './decorators/roles.decorator';
 import { RolesGuard } from './guards/roles.guard';
@@ -12,6 +12,11 @@ export class AuthController {
   @Post('login')
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto.email, dto.password, dto.deviceToken);
+  }
+
+  @Post('magic-login')
+  magicLogin(@Body() dto: MagicLoginDto) {
+    return this.authService.magicLogin(dto.token);
   }
 
   @Post('verify-mfa')

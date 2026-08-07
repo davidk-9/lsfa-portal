@@ -16,6 +16,29 @@ export function DashboardPage() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>
+        {/* Axcelerate Online Learning Card */}
+        <div style={{ ...cardStyle, background: '#f0f9ff', borderColor: '#bae6fd' }}>
+          <div style={{ ...iconBadgeStyle, background: '#e0f2fe' }}>🎓</div>
+          <h3 style={{ margin: '12px 0 6px 0', fontSize: 18, color: '#0369a1' }}>Online Learning Portal</h3>
+          <p style={{ color: '#0369a1', fontSize: 14, marginBottom: 20, flex: 1, lineHeight: 1.5 }}>
+            Access your online learning modules in Axcelerate to complete your pre-course learning before your practical workshop.
+          </p>
+          <a
+            href="https://lifesavingfirstaid.app.axcelerate.com/learner"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              ...buttonStyle,
+              background: '#0284c7',
+              textDecoration: 'none',
+              display: 'inline-block',
+              textAlign: 'center',
+            }}
+          >
+            Go to Online Learning &rarr;
+          </a>
+        </div>
+
         {/* Student Details Card */}
         <div style={cardStyle}>
           <div style={iconBadgeStyle}>📋</div>

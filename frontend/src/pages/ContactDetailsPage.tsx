@@ -158,6 +158,7 @@ export function ContactDetailsPage() {
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [customPassword, setCustomPassword] = useState<string>('');
   const [userActionLoading, setUserActionLoading] = useState(false);
+  const [magicLinkData, setMagicLinkData] = useState<{ fullMagicLink: string; axcelerateSynced: boolean; axcelerateContactId?: number | null } | null>(null);
 
   useEffect(() => {
     loadContact();
@@ -457,6 +458,20 @@ export function ContactDetailsPage() {
       loadContact();
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to create user account');
+    } finally {
+      setUserActionLoading(false);
+    }
+  };
+
+  const handleGenerateMagicLinkForLinkedUser = async () => {
+    if (!linkedUser?.id) return;
+    setUserActionLoading(true);
+    try {
+      const res = await usersApi.generateMagicLink(linkedUser.id);
+      setMagicLinkData(res.data);
+      toast.success('Magic link generated and synced!');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to generate magic link');
     } finally {
       setUserActionLoading(false);
     }
@@ -798,36 +813,38 @@ export function ContactDetailsPage() {
 
               {/* Education & Vocational */}
               <h3 style={sectionTitleStyle}>Education & Vocational</h3>
-              <div style={gridStyle}>
-                <div>
-                  <label style={labelStyle}>Are you currently at school?</label>
-                  <select
-                    style={inputStyle}
-                    value={formData.atSchoolFlag === true ? 'true' : 'false'}
-                    onChange={(e) => handleChange('atSchoolFlag', e.target.value === 'true')}
-                  >
-                    <option value="false">No</option>
-                    <option value="true">Yes</option>
-                  </select>
-                </div>
-                <div>
-                  <label style={labelStyle}>Highest School Level Attained</label>
-                  <select
-                    style={inputStyle}
-                    value={String(formData.highestSchoolLevelId) || ''}
-                    onChange={(e) => handleChange('highestSchoolLevelId', e.target.value ? e.target.value : null)}
-                  >
-                    <option value="">Select...</option>
-                    {highestSchoolLevelCompletedOptions.map((opt) => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div style={gridStyle}>
+                  <div>
+                    <label style={labelStyle}>Are you currently at school?</label>
+                    <select
+                      style={inputStyle}
+                      value={formData.atSchoolFlag === true ? 'true' : 'false'}
+                      onChange={(e) => handleChange('atSchoolFlag', e.target.value === 'true')}
+                    >
+                      <option value="false">No</option>
+                      <option value="true">Yes</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Highest School Level Attained</label>
+                    <select
+                      style={inputStyle}
+                      value={String(formData.highestSchoolLevelId) || ''}
+                      onChange={(e) => handleChange('highestSchoolLevelId', e.target.value ? e.target.value : null)}
+                    >
+                      <option value="">Select...</option>
+                      {highestSchoolLevelCompletedOptions.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
                 <div>
                   <label style={labelStyle}>Do you have prior completed post-school education?</label>
                   <select
-                    style={inputStyle}
+                    style={{ ...inputStyle, maxWidth: '400px' }}
                     value={formData.priorEducationStatus === true ? 'true' : formData.priorEducationStatus === false ? 'false' : ''}
                     onChange={(e) => {
                       const val = e.target.value === 'true' ? true : e.target.value === 'false' ? false : null;
@@ -839,8 +856,8 @@ export function ContactDetailsPage() {
                     }}
                   >
                     <option value="">Select...</option>
-                    <option value="true">Yes</option>
                     <option value="false">No</option>
+                    <option value="true">Yes</option>
                   </select>
                 </div>
 
@@ -862,33 +879,35 @@ export function ContactDetailsPage() {
                   </div>
                 )}
 
-                <div>
-                  <label style={labelStyle}>Study Reason</label>
-                  <select
-                    style={inputStyle}
-                    value={String(formData.studyReasonId) || ''}
-                    onChange={(e) => handleChange('studyReasonId', e.target.value ? e.target.value : null)}
-                  >
-                    <option value="">Select...</option>
-                    {studyReasonOptions.map((opt) => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
-                </div>
+                <div style={gridStyle}>
+                  <div>
+                    <label style={labelStyle}>Study Reason</label>
+                    <select
+                      style={inputStyle}
+                      value={String(formData.studyReasonId) || ''}
+                      onChange={(e) => handleChange('studyReasonId', e.target.value ? e.target.value : null)}
+                    >
+                      <option value="">Select...</option>
+                      {studyReasonOptions.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
 
-                <div>
-                  <label style={labelStyle}>Previous First Aid Related Study</label>
-                  <div style={checkboxListStyle}>
-                    {courseCodeOptions.map((courseOpt) => (
-                      <label key={courseOpt} style={checkboxLabelStyle}>
-                        <input
-                          type="checkbox"
-                          checked={isArrayFieldSelected('customFieldPreviousCerts', courseOpt)}
-                          onChange={(e) => toggleArrayField('customFieldPreviousCerts', courseOpt, e.target.checked)}
-                        />
-                        {courseOpt}
-                      </label>
-                    ))}
+                  <div>
+                    <label style={labelStyle}>Previous First Aid Related Study</label>
+                    <div style={checkboxListStyle}>
+                      {courseCodeOptions.map((courseOpt) => (
+                        <label key={courseOpt} style={checkboxLabelStyle}>
+                          <input
+                            type="checkbox"
+                            checked={isArrayFieldSelected('customFieldPreviousCerts', courseOpt)}
+                            onChange={(e) => toggleArrayField('customFieldPreviousCerts', courseOpt, e.target.checked)}
+                          />
+                          {courseOpt}
+                        </label>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1004,7 +1023,7 @@ export function ContactDetailsPage() {
                   <label style={labelStyle}>Do you require additional support during training?</label>
                   <select
                     style={inputStyle}
-                    value={formData.customFieldAdditionalSupport || 'No - I believe standard support will be sufficient'}
+                    value={formData.customFieldAdditionalSupport || ''}
                     onChange={(e) => {
                       const val = e.target.value;
                       handleChange('customFieldAdditionalSupport', val);
@@ -1013,6 +1032,7 @@ export function ContactDetailsPage() {
                       }
                     }}
                   >
+                    <option value="">Select support requirement...</option>
                     <option value="No - I believe standard support will be sufficient">No - I believe standard support will be sufficient</option>
                     <option value="Yes - I will require additional support to successfully complete this course">Yes - I will require additional support to successfully complete this course</option>
                   </select>
@@ -1105,7 +1125,7 @@ export function ContactDetailsPage() {
 
               {linkedUser ? (
                 <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 16 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
                     <div>
                       <div style={{ fontWeight: 600, color: '#0f172a', fontSize: 15 }}>{linkedUser.name}</div>
                       <div style={{ color: '#64748b', fontSize: 13 }}>{linkedUser.email}</div>
@@ -1118,10 +1138,68 @@ export function ContactDetailsPage() {
                         </span>
                       </div>
                     </div>
-                    <button type="button" onClick={handleUnlinkUser} style={{ ...secondaryButtonStyle, color: '#dc2626', borderColor: '#fca5a5' }} disabled={userActionLoading}>
-                      {userActionLoading ? 'Working...' : 'Unlink User Account'}
-                    </button>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        type="button"
+                        onClick={handleGenerateMagicLinkForLinkedUser}
+                        style={{ ...secondaryButtonStyle, background: '#f0f9ff', color: '#0284c7', borderColor: '#bae6fd' }}
+                        disabled={userActionLoading}
+                      >
+                        {userActionLoading ? 'Working...' : 'Generate Magic Link'}
+                      </button>
+                      <button type="button" onClick={handleUnlinkUser} style={{ ...secondaryButtonStyle, color: '#dc2626', borderColor: '#fca5a5' }} disabled={userActionLoading}>
+                        {userActionLoading ? 'Working...' : 'Unlink User Account'}
+                      </button>
+                    </div>
                   </div>
+
+                  {magicLinkData && (
+                    <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #e2e8f0' }}>
+                      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 6 }}>
+                        Magic Link URL
+                      </label>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <input
+                          type="text"
+                          readOnly
+                          value={magicLinkData.fullMagicLink}
+                          style={{
+                            flex: 1,
+                            padding: '8px 12px',
+                            fontSize: 13,
+                            fontFamily: 'monospace',
+                            borderRadius: 6,
+                            border: '1px solid #cbd5e1',
+                            background: '#ffffff',
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(magicLinkData.fullMagicLink);
+                            toast.success('Magic link copied to clipboard!');
+                          }}
+                          style={{
+                            padding: '8px 16px',
+                            background: '#2563eb',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: 6,
+                            fontSize: 13,
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Copy Link
+                        </button>
+                      </div>
+                      <div style={{ marginTop: 8, fontSize: 12, color: magicLinkData.axcelerateSynced ? '#16a34a' : '#d97706' }}>
+                        {magicLinkData.axcelerateSynced
+                          ? '✓ Written to Axcelerate contact custom field u_lsfalink'
+                          : 'ℹ️ Local magic link generated (not synced to Axcelerate)'}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (() => {
                 const contactEmail = (formData.emailAddress || '').trim().toLowerCase();

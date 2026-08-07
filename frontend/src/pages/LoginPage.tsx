@@ -8,14 +8,21 @@ export function LoginPage() {
   const { login, verifyMfa } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const from = (location.state as { from?: { pathname: string } })?.from?.pathname ?? '/dashboard';
+  const locState = location.state as {
+    from?: { pathname: string };
+    email?: string;
+    step?: 'credentials' | 'mfa' | 'forgot';
+    infoMsg?: string;
+  } | null;
+  const from = locState?.from?.pathname ?? '/dashboard';
 
-  const [step, setStep] = useState<'credentials' | 'mfa' | 'forgot'>('credentials');
-  const [email, setEmail] = useState('');
+  const [step, setStep] = useState<'credentials' | 'mfa' | 'forgot'>(locState?.step ?? 'credentials');
+  const [email, setEmail] = useState(locState?.email ?? '');
   const [password, setPassword] = useState('');
   const [mfaCode, setMfaCode] = useState('');
   const [trustDevice, setTrustDevice] = useState(false);
   const [error, setError] = useState('');
+  const [infoMsg, setInfoMsg] = useState(locState?.infoMsg ?? '');
   const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -124,6 +131,7 @@ export function LoginPage() {
         {step === 'mfa' && (
           <form onSubmit={handleMfa}>
             <h2>Verification code</h2>
+            {infoMsg && <div className="login-success" style={{ marginBottom: 12 }}>{infoMsg}</div>}
             <p className="mfa-hint">A 6-digit code has been sent to <strong>{email}</strong></p>
             {error && <div className="login-error">{error}</div>}
             <div className="form-group">

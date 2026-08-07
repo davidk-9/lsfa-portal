@@ -94,6 +94,38 @@ export class AuthService {
     };
   }
 
+  async magicLogin(token: string) {
+    if (!token || typeof token !== 'string' || token.trim().length === 0) {
+      throw new UnauthorizedException('Invalid magic link');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { magicToken: token.trim() },
+    });
+
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException('Invalid or inactive magic link');
+    }
+
+    // Check setting auto_login_require_mfa
+    const settingRow = await this.prisma.setting.findUnique({
+      where: { key: 'auto_login_require_mfa' },
+    });
+    const requireMfaSetting = settingRow?.value === 'true';
+
+    // MFA verification is always necessary for roles other than STUDENT
+    // Or if auto_login_require_mfa setting is enabled
+    const requireMfa = user.role !== 'STUDENT' || requireMfaSetting;
+
+    if (requireMfa) {
+      await this.sendMfaCode(user);
+      return { requiresMfa: true, email: user.email };
+    } else {
+      const tokenResult = await this.issueToken(user.id, user.email, user.role);
+      return { requiresMfa: false, ...tokenResult };
+    }
+  }
+
   async forgotPassword(email: string) {
     const user = await this.usersService.findByEmail(email);
     // Always return success message even if email doesn't exist for security

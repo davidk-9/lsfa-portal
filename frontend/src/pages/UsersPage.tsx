@@ -43,6 +43,28 @@ export function UsersPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [form, setForm] = useState<UserForm>(emptyForm());
+  const [magicLinkModal, setMagicLinkModal] = useState<{
+    open: boolean;
+    user: User | null;
+    data?: { fullMagicLink: string; axcelerateSynced: boolean; axcelerateContactId?: number | null };
+  } | null>(null);
+
+  const handleGenerateMagicLink = async (u: User) => {
+    setBusyId(u.id);
+    setError(null);
+    try {
+      const res = await usersApi.generateMagicLink(u.id);
+      setMagicLinkModal({
+        open: true,
+        user: u,
+        data: res.data,
+      });
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Failed to generate magic link.');
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   // Debounce search input
   useEffect(() => {
@@ -334,6 +356,14 @@ export function UsersPage() {
                   <td style={td}>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button type="button" onClick={() => openEdit(u)} style={secondaryButton}>Edit</button>
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateMagicLink(u)}
+                        style={{ ...secondaryButton, background: '#f0f9ff', color: '#0284c7', borderColor: '#bae6fd' }}
+                        disabled={busyId === u.id}
+                      >
+                        {busyId === u.id ? 'Working...' : 'Magic Link'}
+                      </button>
                       <button type="button" onClick={() => toggleArchive(u)} style={dangerButton} disabled={busyId === u.id}>
                         {busyId === u.id ? 'Working...' : u.isActive ? 'Archive' : 'Restore'}
                       </button>
@@ -444,6 +474,78 @@ export function UsersPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {magicLinkModal?.open && magicLinkModal.user && magicLinkModal.data ? (
+        <div style={modalOverlay} onClick={() => setMagicLinkModal(null)}>
+          <div style={modalCard} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h2 style={{ margin: 0, fontSize: 18 }}>Magic Link</h2>
+              <button type="button" onClick={() => setMagicLinkModal(null)} style={secondaryButton}>Close</button>
+            </div>
+
+            <p style={{ fontSize: 14, color: '#334155', marginBottom: 16 }}>
+              Magic link generated for <strong>{magicLinkModal.user.name}</strong> ({magicLinkModal.user.email}).
+            </p>
+
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 6 }}>
+                Full Magic Link URL
+              </label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  type="text"
+                  readOnly
+                  value={magicLinkModal.data.fullMagicLink}
+                  style={{
+                    flex: 1,
+                    padding: '8px 12px',
+                    fontSize: 13,
+                    fontFamily: 'monospace',
+                    borderRadius: 6,
+                    border: '1px solid #cbd5e1',
+                    background: '#f8fafc',
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(magicLinkModal.data!.fullMagicLink);
+                    alert('Magic link copied to clipboard!');
+                  }}
+                  style={{
+                    padding: '8px 16px',
+                    background: '#2563eb',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: 6,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Copy Link
+                </button>
+              </div>
+            </div>
+
+            <div style={{ padding: 12, borderRadius: 6, background: magicLinkModal.data.axcelerateSynced ? '#f0fdf4' : '#fffbe2', border: `1px solid ${magicLinkModal.data.axcelerateSynced ? '#bbf7d0' : '#fde68a'}`, fontSize: 13 }}>
+              {magicLinkModal.data.axcelerateSynced ? (
+                <span style={{ color: '#166534' }}>
+                  ✓ Successfully written to Axcelerate contact custom field (<code>u_lsfalink</code>) for contact #{magicLinkModal.data.axcelerateContactId}.
+                </span>
+              ) : magicLinkModal.data.axcelerateContactId ? (
+                <span style={{ color: '#854d0e' }}>
+                  ⚠️ Magic link saved locally, but Axcelerate sync could not be completed for contact #{magicLinkModal.data.axcelerateContactId}.
+                </span>
+              ) : (
+                <span style={{ color: '#64748b' }}>
+                  ℹ️ User is not linked to an Axcelerate contact, so link was saved in local database only.
+                </span>
+              )}
+            </div>
           </div>
         </div>
       ) : null}

@@ -77,6 +77,12 @@ export class UsersController {
     return this.usersService.archive(id);
   }
 
+  @Post(':id/magic-link')
+  @Roles('SUPER_USER', 'ADMIN')
+  generateMagicLink(@Param('id', ParseIntPipe) id: number) {
+    return this.usersService.generateMagicLink(id);
+  }
+
   @Post('lookup-axcelerate-contact')
   @Roles('SUPER_USER')
   lookupAxcelerateContact(@Body('email') email: string) {

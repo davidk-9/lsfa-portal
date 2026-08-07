@@ -4,6 +4,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AxcelerateService } from '../axcelerate/axcelerate.service';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
@@ -214,5 +215,67 @@ export class UsersService {
 
   async lookupAxcelerateContact(email: string) {
     return this.axcelerate.lookupContactByEmail(email);
+  }
+
+  async generateMagicLink(id: number) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      include: { contact: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    const token = crypto.randomBytes(32).toString('hex');
+
+    await this.prisma.user.update({
+      where: { id },
+      data: { magicToken: token },
+    });
+
+    const settingRow = await this.prisma.setting.findUnique({
+      where: { key: 'public_base_url' },
+    });
+    let baseUrl = settingRow?.value || 'https://lsfa.klefen.com.au';
+    baseUrl = baseUrl.trim().replace(/\/+$/, '');
+
+    const fullMagicLink = `${baseUrl}/autolog?key=${token}`;
+
+    let axcelerateSynced = false;
+    let axContactId: number | null = null;
+
+    let rawContactId = user.axcelerateContactId;
+    if (!rawContactId && user.contact?.contactId) {
+      rawContactId = String(user.contact.contactId);
+    }
+
+    if (rawContactId) {
+      axContactId = parseInt(rawContactId, 10);
+    }
+
+    if (axContactId && !isNaN(axContactId) && axContactId > 0) {
+      try {
+        await this.axcelerate.updateContact(axContactId, {
+          customField_u_lsfalink: fullMagicLink,
+        });
+        axcelerateSynced = true;
+
+        if (user.contact) {
+          await this.prisma.contact.update({
+            where: { id: user.contact.id },
+            data: { customFieldULsfaLink: fullMagicLink },
+          });
+        }
+      } catch (err: any) {
+        console.error(`Failed to sync magic link for contact ${axContactId}:`, err?.message);
+      }
+    }
+
+    return {
+      userId: user.id,
+      email: user.email,
+      magicToken: token,
+      fullMagicLink,
+      axcelerateSynced,
+      axcelerateContactId: axContactId,
+    };
   }
 }

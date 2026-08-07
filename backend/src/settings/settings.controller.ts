@@ -10,7 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { SettingsService } from './settings.service';
-import { UpsertManySettingsDto } from './dto/settings.dto';
+import { UpsertManySettingsDto, BulkGenerateMagicLinksDto } from './dto/settings.dto';
 import { CreateCourseCodeDto, UpdateCourseCodeDto } from './dto/course-code.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -55,5 +55,12 @@ export class SettingsController {
   @Delete('course-codes/:id')
   deleteCourseCode(@Param('id', ParseIntPipe) id: number) {
     return this.settingsService.deleteCourseCode(id);
+  }
+
+  // ── Auto-Login Bulk Generation ───────────────────────────────────────────────
+
+  @Post('auto-login/bulk-generate')
+  bulkGenerateMagicLinks(@Body() dto: BulkGenerateMagicLinksDto) {
+    return this.settingsService.bulkGenerateMagicLinks(dto);
   }
 }

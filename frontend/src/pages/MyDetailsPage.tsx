@@ -5,6 +5,7 @@ import { contactsApi, settingsApi } from '../api';
 import api from '../api/client';
 import { saccOptions } from '../utils/sacc';
 import { asclOptions } from '../utils/ascl';
+import { validateStudentOnboarding } from '../utils/onboardingValidation';
 
 type Tab = 'personal' | 'avetmiss' | 'declarations';
 
@@ -136,7 +137,7 @@ function formatUsiMatchResults(data: any, msg?: string): string {
   return 'USI verification failed. Please check your details and try again.';
 }
 
-export function MyDetailsPage() {
+export function MyDetailsPage({ onSavedCallback }: { onSavedCallback?: () => void } = {}) {
   const toast = useToast();
 
   const [activeTab, setActiveTab] = useState<Tab>('personal');
@@ -273,26 +274,23 @@ export function MyDetailsPage() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validation checks for Prior Education and Disability flags
-    if (formData.priorEducationStatus === true) {
-      if (!formData.priorEducationIds || formData.priorEducationIds.length === 0) {
-        toast.error('Prior Education is set to Yes. Please select at least one type of prior education qualification.');
-        return;
-      }
-    }
-
-    if (formData.disabilityFlag === true) {
-      if (!formData.disabilityTypeIds || formData.disabilityTypeIds.length === 0) {
-        toast.error('Disabilities is set to Yes. Please select at least one applicable disability type.');
-        return;
-      }
+    // Comprehensive onboarding validation
+    const validation = validateStudentOnboarding(formData);
+    if (!validation.isComplete) {
+      const firstTab = validation.missingFields[0].tab;
+      setActiveTab(firstTab);
+      toast.error(`Please complete all required fields: ${validation.missingFields.map(f => f.label).join(', ')}`);
+      return;
     }
 
     setSaving(true);
     try {
       await contactsApi.updateMyContact(formData);
       toast.success('Student contact details saved successfully');
-      loadContact();
+      await loadContact();
+      if (onSavedCallback) {
+        onSavedCallback();
+      }
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to save contact details');
     } finally {
@@ -714,32 +712,34 @@ export function MyDetailsPage() {
 
               {/* Education & Vocational */}
               <h3 style={sectionTitleStyle}>Education & Vocational</h3>
-              <div style={gridStyle}>
-                <div>
-                  <label style={labelStyle}>Are you currently at school?</label>
-                  <select 
-                    style={inputStyle} 
-                    value={formData.atSchoolFlag === true ? 'true' : 'false'} 
-                    onChange={(e) => handleChange('atSchoolFlag', e.target.value === 'true')}
-                  >
-                    <option value="false">No</option>
-                    <option value="true">Yes</option>
-                  </select>
-                </div>
-                <div>
-                  <label style={labelStyle}>Highest School Level Attained</label>
-                  <select style={inputStyle} value={String(formData.highestSchoolLevelId) || ''} onChange={(e) => handleChange('highestSchoolLevelId', e.target.value ? e.target.value : null)}>
-                    <option value="">Select...</option>
-                    {highestSchoolLevelCompletedOptions.map(opt => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div style={gridStyle}>
+                  <div>
+                    <label style={labelStyle}>Are you currently at school?</label>
+                    <select 
+                      style={inputStyle} 
+                      value={formData.atSchoolFlag === true ? 'true' : 'false'} 
+                      onChange={(e) => handleChange('atSchoolFlag', e.target.value === 'true')}
+                    >
+                      <option value="false">No</option>
+                      <option value="true">Yes</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Highest School Level Attained</label>
+                    <select style={inputStyle} value={String(formData.highestSchoolLevelId) || ''} onChange={(e) => handleChange('highestSchoolLevelId', e.target.value ? e.target.value : null)}>
+                      <option value="">Select...</option>
+                      {highestSchoolLevelCompletedOptions.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
                 <div>
                   <label style={labelStyle}>Do you have prior completed post-school education?</label>
                   <select 
-                    style={inputStyle} 
+                    style={{ ...inputStyle, maxWidth: '400px' }} 
                     value={formData.priorEducationStatus === true ? 'true' : formData.priorEducationStatus === false ? 'false' : ''} 
                     onChange={(e) => {
                       const val = e.target.value === 'true' ? true : e.target.value === 'false' ? false : null;
@@ -751,8 +751,8 @@ export function MyDetailsPage() {
                     }}
                   >
                     <option value="">Select...</option>
-                    <option value="true">Yes</option>
                     <option value="false">No</option>
+                    <option value="true">Yes</option>
                   </select>
                 </div>
 
@@ -774,29 +774,31 @@ export function MyDetailsPage() {
                   </div>
                 )}
 
-                <div>
-                  <label style={labelStyle}>Study Reason</label>
-                  <select style={inputStyle} value={String(formData.studyReasonId) || ''} onChange={(e) => handleChange('studyReasonId', e.target.value ? e.target.value : null)}>
-                    <option value="">Select...</option>
-                    {studyReasonOptions.map(opt => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
-                </div>
+                <div style={gridStyle}>
+                  <div>
+                    <label style={labelStyle}>Study Reason</label>
+                    <select style={inputStyle} value={String(formData.studyReasonId) || ''} onChange={(e) => handleChange('studyReasonId', e.target.value ? e.target.value : null)}>
+                      <option value="">Select...</option>
+                      {studyReasonOptions.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
 
-                <div>
-                  <label style={labelStyle}>Previous First Aid Related Study</label>
-                  <div style={checkboxListStyle}>
-                    {courseCodeOptions.map(courseOpt => (
-                      <label key={courseOpt} style={checkboxLabelStyle}>
-                        <input 
-                          type="checkbox" 
-                          checked={isArrayFieldSelected('customFieldPreviousCerts', courseOpt)} 
-                          onChange={(e) => toggleArrayField('customFieldPreviousCerts', courseOpt, e.target.checked)} 
-                        />
-                        {courseOpt}
-                      </label>
-                    ))}
+                  <div>
+                    <label style={labelStyle}>Previous First Aid Related Study</label>
+                    <div style={checkboxListStyle}>
+                      {courseCodeOptions.map(courseOpt => (
+                        <label key={courseOpt} style={checkboxLabelStyle}>
+                          <input 
+                            type="checkbox" 
+                            checked={isArrayFieldSelected('customFieldPreviousCerts', courseOpt)} 
+                            onChange={(e) => toggleArrayField('customFieldPreviousCerts', courseOpt, e.target.checked)} 
+                          />
+                          {courseOpt}
+                        </label>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -912,7 +914,7 @@ export function MyDetailsPage() {
                   <label style={labelStyle}>Do you require additional support during training?</label>
                   <select
                     style={inputStyle}
-                    value={formData.customFieldAdditionalSupport || 'No - I believe standard support will be sufficient'}
+                    value={formData.customFieldAdditionalSupport || ''}
                     onChange={(e) => {
                       const val = e.target.value;
                       handleChange('customFieldAdditionalSupport', val);
@@ -921,6 +923,7 @@ export function MyDetailsPage() {
                       }
                     }}
                   >
+                    <option value="">Select support requirement...</option>
                     <option value="No - I believe standard support will be sufficient">No - I believe standard support will be sufficient</option>
                     <option value="Yes - I will require additional support to successfully complete this course">Yes - I will require additional support to successfully complete this course</option>
                   </select>

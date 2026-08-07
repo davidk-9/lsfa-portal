@@ -4,6 +4,9 @@ export const authApi = {
   login: (email: string, password: string, deviceToken?: string) =>
     api.post('/auth/login', { email, password, deviceToken }),
 
+  magicLogin: (token: string) =>
+    api.post('/auth/magic-login', { token }),
+
   verifyMfa: (email: string, code: string, trustDevice?: boolean) =>
     api.post('/auth/verify-mfa', { email, code, trustDevice }),
 
@@ -33,6 +36,7 @@ export const usersApi = {
   restore: (id: number) => api.patch(`/users/${id}/restore`),
   deactivate: (id: number) => api.patch(`/users/${id}/deactivate`),
   lookupAxcelerateContact: (email: string) => api.post('/users/lookup-axcelerate-contact', { email }),
+  generateMagicLink: (id: number) => api.post(`/users/${id}/magic-link`),
 };
 
 export const contactsApi = {
@@ -64,6 +68,8 @@ export const settingsApi = {
   updateCourseCode: (id: number, data: { code?: string; name?: string; shortName?: string; cost?: number }) =>
     api.put(`/settings/course-codes/${id}`, data),
   deleteCourseCode: (id: number) => api.delete(`/settings/course-codes/${id}`),
+  bulkGenerateMagicLinks: (options: { syncToAxcelerate?: boolean; forceRegenerate?: boolean }) =>
+    api.post('/settings/auto-login/bulk-generate', options),
 };
 
 export const workshopsApi = {

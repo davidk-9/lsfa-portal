@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsArray, ValidateNested } from 'class-validator';
+import { IsString, IsNotEmpty, IsArray, ValidateNested, IsOptional, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class UpsertSettingDto {
@@ -15,4 +15,14 @@ export class UpsertManySettingsDto {
   @ValidateNested({ each: true })
   @Type(() => UpsertSettingDto)
   settings: UpsertSettingDto[];
+}
+
+export class BulkGenerateMagicLinksDto {
+  @IsOptional()
+  @IsBoolean()
+  syncToAxcelerate?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  forceRegenerate?: boolean;
 }
