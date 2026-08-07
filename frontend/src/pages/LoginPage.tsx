@@ -22,7 +22,7 @@ export function LoginPage() {
   const [mfaCode, setMfaCode] = useState('');
   const [trustDevice, setTrustDevice] = useState(false);
   const [error, setError] = useState('');
-  const [infoMsg, setInfoMsg] = useState(locState?.infoMsg ?? '');
+  const [infoMsg] = useState(locState?.infoMsg ?? '');
   const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
 

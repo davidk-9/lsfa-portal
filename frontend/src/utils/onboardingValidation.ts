@@ -7,7 +7,7 @@ export function validateStudentOnboarding(contact: any): OnboardingValidationRes
   const missing: { key: string; label: string; tab: 'personal' | 'avetmiss' | 'declarations' }[] = [];
 
   if (!contact) {
-    return { isComplete: false, missing: [{ key: 'contact', label: 'Student Contact Record', tab: 'personal' }] };
+    return { isComplete: false, missingFields: [{ key: 'contact', label: 'Student Contact Record', tab: 'personal' }] };
   }
 
   // ── Personal & Contact ────────────────────────────────────────────────────────

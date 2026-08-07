@@ -13,7 +13,7 @@ const AXCELERATE_LEARNER_URL = 'https://lifesavingfirstaid.app.axcelerate.com/le
 export function StudentOnboardingGuard({ children }: Props) {
   const { user, logout } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [contact, setContact] = useState<any>(null);
+  const [, setContact] = useState<any>(null);
   const [validation, setValidation] = useState<OnboardingValidationResult | null>(null);
   const [step, setStep] = useState<'checking' | 'incomplete' | 'learning_intro' | 'complete'>('checking');
 
