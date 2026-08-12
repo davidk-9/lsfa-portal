@@ -1098,13 +1098,21 @@ export class ContactsService {
       }
     }
 
-    // 2. Check if a WorkshopProgress record exists to check if lmsEnabled or learningPlanId is set
-    const wp = await this.prisma.workshopProgress.findUnique({
+    // 2. Ensure a WorkshopProgress record exists for instanceId so foreign key constraint is satisfied
+    const wp = await this.prisma.workshopProgress.upsert({
       where: { instanceId },
+      update: {},
+      create: {
+        instanceId,
+        completedSteps: 0,
+        totalSteps: 3,
+        isComplete: false,
+        lmsEnabled: false,
+      },
     });
 
-    const isLsfaLms = wp?.lmsEnabled === true;
-    const learningPlanId = isLsfaLms && wp?.learningPlanId ? wp.learningPlanId : null;
+    const isLsfaLms = wp.lmsEnabled === true;
+    const learningPlanId = isLsfaLms && wp.learningPlanId ? wp.learningPlanId : null;
 
     // 3. Handle deletion vs creation/update
     if (type === 'student.workshop_enrolment_deleted') {
