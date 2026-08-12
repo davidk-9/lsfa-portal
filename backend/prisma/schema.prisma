@@ -50,25 +50,32 @@ model Setting {
 }
 
 model CourseCode {
-  id        Int      @id @default(autoincrement())
-  code      String   @unique
-  name      String   @default("")
-  shortName String   @default("")
-  cost      Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                 Int                    @id @default(autoincrement())
+  code               String                 @unique
+  name               String                 @default("")
+  shortName          String                 @default("")
+  cost               Int                    @default(0)
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  learningPlans      LearningPlan[]
+  chapters           LmsChapter[]
+  knowledgeEvidences LmsKnowledgeEvidence[]
 }
 
 model WorkshopProgress {
-  id               Int      @id @default(autoincrement())
-  instanceId       Int      @unique
-  trainerContactId String   @default("")
-  completedSteps   Int      @default(0)
-  totalSteps       Int      @default(3)
-  isComplete       Boolean  @default(false)
+  id               Int             @id @default(autoincrement())
+  instanceId       Int             @unique
+  trainerContactId String          @default("")
+  completedSteps   Int             @default(0)
+  totalSteps       Int             @default(3)
+  isComplete       Boolean         @default(false)
   statusPayload    String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  lmsEnabled       Boolean         @default(false)
+  learningPlanId   Int?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  learningPlan     LearningPlan?   @relation(fields: [learningPlanId], references: [id], onDelete: SetNull)
+  lmsEnrollments   LmsEnrollment[]
 
   @@index([isComplete])
   @@index([trainerContactId])
@@ -294,6 +301,7 @@ model Contact {
   lastUpdated                            String?
   contactEntryDate                       String?
   contactActive                          Boolean? @default(true)
+  bypassOnboarding                       Boolean  @default(false)
   photo                                  String?
   createdAt                              DateTime @default(now())
   updatedAt                              DateTime @updatedAt
@@ -301,6 +309,7 @@ model Contact {
   sFullAddress                           String?
   studyReasonId                          String?
   user                                   User?
+  lmsEnrollments                         LmsEnrollment[]
 
   @@index([emailAddress])
   @@index([givenName, surname])
@@ -348,4 +357,135 @@ enum Role {
   ADMIN
   TRAINER
   STUDENT
+}
+
+model LearningPlan {
+  id               Int                    @id @default(autoincrement())
+  courseCodeId     Int
+  version          String                 // e.g., "v1.0"
+  title            String                 @default("")
+  description      String                 @default("")
+  status           String                 @default("DRAFT") // DRAFT, PUBLISHED, ARCHIVED
+  isDefault        Boolean                @default(false)
+  effectiveFrom    DateTime?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  courseCode       CourseCode             @relation(fields: [courseCodeId], references: [id], onDelete: Cascade)
+  planQuestions    LearningPlanQuestion[]
+  workshopProgress WorkshopProgress[]
+  lmsEnrollments   LmsEnrollment[]
+
+  @@unique([courseCodeId, version])
+  @@index([courseCodeId])
+}
+
+model LmsKnowledgeEvidence {
+  id          String            @id @default(uuid())
+  code        String            // e.g., "KE01"
+  title       String
+  description String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  courseCodes CourseCode[]
+  blobs       LmsLearningBlob[]
+  questions   LmsQuestion[]
+
+  @@index([code])
+}
+
+model LmsChapter {
+  id           String            @id @default(uuid())
+  courseCodeId Int
+  title        String
+  description  String?
+  sortOrder    Int               @default(0)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  courseCode   CourseCode        @relation(fields: [courseCodeId], references: [id], onDelete: Cascade)
+  blobs        LmsLearningBlob[]
+
+  @@index([courseCodeId, sortOrder])
+}
+
+model LmsQuestion {
+  id                    String                 @id @default(uuid())
+  type                  Int                    // QuestionType enum (1-7)
+  questionText          String
+  questionData          Json?                  @db.JsonB
+  correctAnswer         Json?                  @db.JsonB
+  benchmarkAnswer       String?                // For AI / vector grading against model answer
+  points                Int                    @default(1)
+  coreLearningBlobId    String?
+  supportLearningBlobId String?
+  knowledgeEvidenceId   String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  coreLearningBlob      LmsLearningBlob?       @relation("CoreBlobQuestions", fields: [coreLearningBlobId], references: [id], onDelete: SetNull)
+  supportLearningBlob   LmsLearningBlob?       @relation("SupportBlobQuestions", fields: [supportLearningBlobId], references: [id], onDelete: SetNull)
+  knowledgeEvidence     LmsKnowledgeEvidence? @relation(fields: [knowledgeEvidenceId], references: [id], onDelete: SetNull)
+  planQuestions         LearningPlanQuestion[]
+
+  @@index([type])
+  @@index([knowledgeEvidenceId])
+}
+
+model LmsLearningBlob {
+  id                  String                @id @default(uuid())
+  chapterId           String?
+  knowledgeEvidenceId String?
+  title               String
+  description         String?
+  contentHtml         String?
+  vimeoId             String?
+  azureBlobUrl        String?
+  durationSeconds     Int                   @default(0)
+  sortOrder           Int                   @default(0)
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  chapter             LmsChapter?           @relation(fields: [chapterId], references: [id], onDelete: SetNull)
+  knowledgeEvidence   LmsKnowledgeEvidence? @relation(fields: [knowledgeEvidenceId], references: [id], onDelete: SetNull)
+  coreQuestions       LmsQuestion[]         @relation("CoreBlobQuestions")
+  supportQuestions    LmsQuestion[]         @relation("SupportBlobQuestions")
+
+  @@index([chapterId, sortOrder])
+  @@index([knowledgeEvidenceId])
+}
+
+model LearningPlanQuestion {
+  learningPlanId Int
+  questionId     String
+  sortOrder      Int          @default(0)
+  points         Int?
+  addedAt        DateTime     @default(now())
+  learningPlan   LearningPlan @relation(fields: [learningPlanId], references: [id], onDelete: Cascade)
+  question       LmsQuestion  @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@id([learningPlanId, questionId])
+  @@index([learningPlanId, sortOrder])
+}
+
+model LmsEnrollment {
+  id               String            @id @default(uuid())
+  contactId        Int
+  instanceId       Int?
+  learningPlanId   Int?
+  courseCodeStr    String?
+  axStatus         String?
+  learningMode     Int               @default(3) // DeepDive default
+  enrolledAt       DateTime          @default(now())
+  completedAt      DateTime?
+  isActive         Boolean           @default(true)
+  progressData     Json              @default("{}") @db.JsonB
+  currentScore     Int               @default(0)
+  possibleScore    Int               @default(0)
+  isCompetent      Boolean           @default(false)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  contact          Contact           @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  learningPlan     LearningPlan?     @relation(fields: [learningPlanId], references: [id], onDelete: SetNull)
+  workshopProgress WorkshopProgress? @relation(fields: [instanceId], references: [instanceId], onDelete: SetNull)
+
+  @@index([contactId])
+  @@index([learningPlanId])
+  @@index([instanceId])
 }

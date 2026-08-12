@@ -57,8 +57,8 @@ export function ContactsPage() {
     <div className="users-page">
       <div className="users-header">
         <div>
-          <h1>Contact Management</h1>
-          <p className="users-subtitle">Search, view, and manage all student and contact profiles ({total.toLocaleString()} total)</p>
+          <h1>Student Management</h1>
+          <p className="users-subtitle">Search, view, and manage all student profiles ({total.toLocaleString()} total)</p>
         </div>
       </div>
 
@@ -122,7 +122,23 @@ export function ContactsPage() {
                   return (
                     <tr key={c.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={tdStyle}>
-                        <strong>{fullName}</strong>
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/contacts/${c.id}`)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            padding: 0,
+                            color: '#2563eb',
+                            fontWeight: 600,
+                            fontSize: 14,
+                            cursor: 'pointer',
+                            textDecoration: 'underline',
+                            textAlign: 'left',
+                          }}
+                        >
+                          {fullName}
+                        </button>
                       </td>
                       <td style={tdStyle}>{c.emailAddress || <span style={{ color: '#94a3b8' }}>None</span>}</td>
                       <td style={tdStyle}>{c.mobilePhone || c.phone || <span style={{ color: '#94a3b8' }}>None</span>}</td>
@@ -143,7 +159,7 @@ export function ContactsPage() {
                       <td style={tdStyle}>
                         <button
                           type="button"
-                          onClick={() => navigate(`/contacts/${c.id}`)}
+                          onClick={() => navigate(`/contacts/${c.id}?mode=edit`)}
                           style={{
                             background: '#f1f5f9',
                             color: '#0f172a',
@@ -155,7 +171,7 @@ export function ContactsPage() {
                             cursor: 'pointer',
                           }}
                         >
-                          Edit Profile
+                          Edit Details
                         </button>
                       </td>
                     </tr>

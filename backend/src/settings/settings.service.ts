@@ -164,7 +164,7 @@ export class SettingsService {
 
         const axContactId = rawContactId ? parseInt(rawContactId, 10) : null;
 
-        if (axContactId && axContactId > 0) {
+        if (axContactId && axContactId > 0 && axContactId < 900000000) {
           // Rate-limit throttle: 335ms delay enforces ~180 requests/minute max (3 req/sec)
           await new Promise((res) => setTimeout(res, 335));
 

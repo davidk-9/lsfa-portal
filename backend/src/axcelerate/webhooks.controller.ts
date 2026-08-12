@@ -55,6 +55,16 @@ export class WebhooksController {
       });
     }
 
+    if (type?.startsWith('student.workshop_enrolment_')) {
+      const enrolmentPayload = body?.message?.enrolment;
+      if (enrolmentPayload) {
+        this.logger.log(`Processing ${type} webhook`);
+        this.contactsService.handleWorkshopEnrolmentWebhook(type, enrolmentPayload).catch(err => {
+          this.logger.error(`Failed to handle ${type} webhook: ${err.message}`);
+        });
+      }
+    }
+
     return { received: true };
   }
 }

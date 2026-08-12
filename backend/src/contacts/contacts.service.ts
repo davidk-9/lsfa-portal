@@ -32,18 +32,21 @@ export class ContactsService {
 
     // Try to auto-link with Axcelerate contact if axcelerateContactId or email is present
     if (user.axcelerateContactId) {
-      try {
-        return await this.syncAxcelerateForUser(userId, parseInt(user.axcelerateContactId, 10));
-      } catch (err: any) {
-        this.logger.warn(`Failed to auto-sync Axcelerate contact ${user.axcelerateContactId}: ${err?.message}`);
+      const parsedAxId = parseInt(user.axcelerateContactId, 10);
+      if (parsedAxId && parsedAxId > 0 && parsedAxId < 900000000) {
+        try {
+          return await this.syncAxcelerateForUser(userId, parsedAxId);
+        } catch (err: any) {
+          this.logger.warn(`Failed to auto-sync Axcelerate contact ${user.axcelerateContactId}: ${err?.message}`);
+        }
       }
     }
 
-    // Attempt lookup by email
-    if (user.email) {
+    // Attempt lookup by email (skip example/test emails)
+    if (user.email && !user.email.endsWith('@example.com') && !user.email.endsWith('@test.com')) {
       try {
         const found = await this.axcelerate.lookupContactByEmail(user.email);
-        if (found?.contactId) {
+        if (found?.contactId && Number(found.contactId) < 900000000) {
           return await this.syncAxcelerateForUser(userId, parseInt(found.contactId, 10));
         }
       } catch (err: any) {
@@ -107,6 +110,10 @@ export class ContactsService {
       updateData.studyReasonId = String(updateData.studyReasonId);
     }
 
+    if ('bypassOnboarding' in updateData) {
+      updateData.bypassOnboarding = updateData.bypassOnboarding === true || updateData.bypassOnboarding === 'true';
+    }
+
     try {
       const updatedLocal = await this.prisma.contact.update({
         where: { id: contact.id },
@@ -147,13 +154,13 @@ export class ContactsService {
       axId = parseInt(user.axcelerateContactId, 10);
     }
 
-    if (!axId && user.email) {
+    if (!axId && user.email && !user.email.endsWith('@example.com') && !user.email.endsWith('@test.com')) {
       const lookup = await this.axcelerate.lookupContactByEmail(user.email);
       if (lookup?.contactId) axId = parseInt(lookup.contactId, 10);
     }
 
-    if (!axId) {
-      throw new BadRequestException('No Axcelerate Contact ID associated with this user or email');
+    if (!axId || axId >= 900000000) {
+      throw new BadRequestException('No valid Axcelerate Contact ID associated with this user or email');
     }
 
     const payload = await this.axcelerate.getContactDetail(axId);
@@ -345,6 +352,24 @@ export class ContactsService {
     return contact;
   }
 
+  async getContactEnrolments(contactId: number) {
+    const contact = await this.prisma.contact.findUnique({ where: { id: contactId } });
+    if (!contact) throw new NotFoundException(`Contact with ID ${contactId} not found`);
+
+    return this.prisma.lmsEnrollment.findMany({
+      where: { contactId },
+      include: {
+        learningPlan: {
+          include: {
+            courseCode: true,
+          },
+        },
+        workshopProgress: true,
+      },
+      orderBy: { enrolledAt: 'desc' },
+    });
+  }
+
   async updateContactById(id: number, updateData: any) {
     const contact = await this.prisma.contact.findUnique({ where: { id } });
     if (!contact) throw new NotFoundException(`Contact with ID ${id} not found`);
@@ -376,6 +401,10 @@ export class ContactsService {
 
     if ('studyReasonId' in updateData && updateData.studyReasonId != null) {
       updateData.studyReasonId = String(updateData.studyReasonId);
+    }
+
+    if ('bypassOnboarding' in updateData) {
+      updateData.bypassOnboarding = updateData.bypassOnboarding === true || updateData.bypassOnboarding === 'true';
     }
 
     const updated = await this.prisma.contact.update({
@@ -1038,6 +1067,87 @@ export class ContactsService {
     }
 
     return contact;
+  }
+
+  async handleWorkshopEnrolmentWebhook(type: string, enrolmentPayload: any) {
+    if (!enrolmentPayload) return;
+
+    const axContactId = enrolmentPayload?.student?.contactId ? Number(enrolmentPayload.student.contactId) : null;
+    const instanceId = enrolmentPayload?.workshop?.id ? Number(enrolmentPayload.workshop.id) : null;
+    const axStatus = enrolmentPayload?.status ? String(enrolmentPayload.status) : null;
+
+    if (!axContactId || !instanceId) {
+      this.logger.warn(`Missing contactId (${axContactId}) or instanceId (${instanceId}) in workshop enrolment webhook`);
+      return;
+    }
+
+    this.logger.log(`Handling workshop enrolment webhook (${type}): axContactId=${axContactId}, instanceId=${instanceId}, status=${axStatus}`);
+
+    // 1. Ensure local Contact record exists
+    let contact = await this.prisma.contact.findUnique({
+      where: { contactId: axContactId },
+    });
+
+    if (!contact) {
+      this.logger.log(`Local contact with Axcelerate ID ${axContactId} not found. Syncing from Axcelerate...`);
+      try {
+        contact = await this.syncSingleContactById(axContactId);
+      } catch (err: any) {
+        this.logger.error(`Failed to sync contact ${axContactId} during workshop enrolment webhook: ${err.message}`);
+        return;
+      }
+    }
+
+    // 2. Check if a WorkshopProgress record exists to check if lmsEnabled or learningPlanId is set
+    const wp = await this.prisma.workshopProgress.findUnique({
+      where: { instanceId },
+    });
+
+    const isLsfaLms = wp?.lmsEnabled === true;
+    const learningPlanId = isLsfaLms && wp?.learningPlanId ? wp.learningPlanId : null;
+
+    // 3. Handle deletion vs creation/update
+    if (type === 'student.workshop_enrolment_deleted') {
+      const deleted = await this.prisma.lmsEnrollment.deleteMany({
+        where: {
+          contactId: contact.id,
+          instanceId,
+        },
+      });
+      this.logger.log(`Deleted ${deleted.count} enrolment record(s) for contactId=${contact.id}, instanceId=${instanceId}`);
+      return;
+    }
+
+    // Created, updated, or status_changed:
+    const existing = await this.prisma.lmsEnrollment.findFirst({
+      where: {
+        contactId: contact.id,
+        instanceId,
+      },
+    });
+
+    if (existing) {
+      await this.prisma.lmsEnrollment.update({
+        where: { id: existing.id },
+        data: {
+          axStatus: axStatus ?? existing.axStatus,
+          isActive: true,
+          ...(learningPlanId ? { learningPlanId } : {}),
+        },
+      });
+      this.logger.log(`Updated enrolment ${existing.id} with status=${axStatus}`);
+    } else {
+      const created = await this.prisma.lmsEnrollment.create({
+        data: {
+          contactId: contact.id,
+          instanceId,
+          learningPlanId,
+          axStatus,
+          isActive: true,
+        },
+      });
+      this.logger.log(`Created new enrolment ${created.id} for contactId=${contact.id}, instanceId=${instanceId}, axStatus=${axStatus}`);
+    }
   }
 
   async getBulkSyncStatus() {

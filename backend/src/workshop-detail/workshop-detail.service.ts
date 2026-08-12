@@ -718,6 +718,38 @@ export class WorkshopDetailService {
     return { success: true };
   }
 
+  async getWorkshopProgressRecord(instanceId: number) {
+    const wp = await this.prisma.workshopProgress.findUnique({
+      where: { instanceId },
+      include: { learningPlan: { include: { courseCode: true } } },
+    });
+    if (!wp) {
+      return {
+        id: null,
+        instanceId,
+        trainerContactId: '',
+        completedSteps: 0,
+        totalSteps: 3,
+        isComplete: false,
+        statusPayload: null,
+        lmsEnabled: false,
+        learningPlanId: null,
+        createdAt: null,
+        updatedAt: null,
+        learningPlan: null,
+      };
+    }
+    return wp;
+  }
+
+  async toggleLmsEnabled(instanceId: number, lmsEnabled: boolean) {
+    return this.prisma.workshopProgress.upsert({
+      where: { instanceId },
+      update: { lmsEnabled: Boolean(lmsEnabled) },
+      create: { instanceId, lmsEnabled: Boolean(lmsEnabled) },
+    });
+  }
+
   // ── OLKA ──────────────────────────────────────────────────────────────────────
   // Port of PHP ajax_fetch_olka_statuses
 

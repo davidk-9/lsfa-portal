@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -19,6 +19,15 @@ import { BulkSchedulerPage } from './pages/BulkSchedulerPage';
 import { WorkshopDetailPage } from './pages/WorkshopDetailPage';
 import { UserProfilePage } from './pages/UserProfilePage';
 import { MyDetailsPage } from './pages/MyDetailsPage';
+import { LmsAdminPage } from './pages/LmsAdminPage';
+
+import { SessionProvider } from './lms/contexts/SessionContext';
+import { LmsHome } from './lms/pages/LmsHome';
+import { LmsMagicLinkHandler } from './lms/pages/LmsMagicLinkHandler';
+import { LmsWelcome } from './lms/pages/LmsWelcome';
+import { LmsModeSelector } from './lms/pages/LmsModeSelector';
+import { LmsLearnDashboard } from './lms/pages/LmsLearnDashboard';
+import { LmsResults } from './lms/pages/LmsResults';
 
 function App() {
   return (
@@ -76,6 +85,14 @@ function App() {
               }
             />
             <Route
+              path="lms-admin"
+              element={
+                <ProtectedRoute allowedRoles={['SUPER_USER', 'ADMIN']}>
+                  <LmsAdminPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="my-calendar"
               element={
                 <ProtectedRoute allowedRoles={['SUPER_USER', 'ADMIN', 'TRAINER']}>
@@ -116,6 +133,24 @@ function App() {
               }
             />
           </Route>
+
+          {/* LMS Student Portal Routes */}
+          <Route
+            path="/lms"
+            element={
+              <SessionProvider>
+                <Outlet />
+              </SessionProvider>
+            }
+          >
+            <Route index element={<LmsHome />} />
+            <Route path="start/:enrollmentId" element={<LmsMagicLinkHandler />} />
+            <Route path="welcome" element={<LmsWelcome />} />
+            <Route path="select-mode" element={<LmsModeSelector />} />
+            <Route path="learn" element={<LmsLearnDashboard />} />
+            <Route path="results" element={<LmsResults />} />
+          </Route>
+
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
         </AuthProvider>

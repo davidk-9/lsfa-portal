@@ -214,6 +214,9 @@ export class UsersService {
   }
 
   async lookupAxcelerateContact(email: string) {
+    if (!email || email.endsWith('@example.com') || email.endsWith('@test.com')) {
+      return null;
+    }
     return this.axcelerate.lookupContactByEmail(email);
   }
 
@@ -251,7 +254,7 @@ export class UsersService {
       axContactId = parseInt(rawContactId, 10);
     }
 
-    if (axContactId && !isNaN(axContactId) && axContactId > 0) {
+    if (axContactId && !isNaN(axContactId) && axContactId > 0 && axContactId < 900000000) {
       try {
         await this.axcelerate.updateContact(axContactId, {
           customField_u_lsfalink: fullMagicLink,

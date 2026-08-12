@@ -41,6 +41,7 @@ export const usersApi = {
 
 export const contactsApi = {
   getMyContact: () => api.get('/contacts/me'),
+  getMyEnrolments: () => api.get('/contacts/me/enrolments'),
   updateMyContact: (data: object) => api.patch('/contacts/me', data),
   syncAxcelerate: (axcelerateContactId?: number) => api.post('/contacts/sync-axcelerate', { axcelerateContactId }),
   verifyMyUsi: (usi?: string) => api.post('/contacts/me/verify-usi', { usi }),
@@ -48,6 +49,7 @@ export const contactsApi = {
   getPaginated: (page: number = 1, limit: number = 20, search: string = '', status: string = 'active') =>
     api.get('/contacts', { params: { page, limit, search, status } }),
   getById: (id: number) => api.get(`/contacts/${id}`),
+  getEnrolments: (id: number) => api.get(`/contacts/${id}/enrolments`),
   updateById: (id: number, data: object) => api.patch(`/contacts/${id}`, data),
   syncAxcelerateForContact: (id: number) => api.post(`/contacts/${id}/sync-axcelerate`),
   verifyContactUsi: (id: number, usi?: string) => api.post(`/contacts/${id}/verify-usi`, { usi }),
@@ -102,6 +104,10 @@ export const workshopDetailApi = {
   bulkMarkAllTasksSatisfactory: (instanceId: number, courseCode: string) =>
     api.post('/workshop-detail/checklist/bulk-mark-satisfactory', { instanceId, courseCode }),
   saveProgress: (data: object) => api.post('/workshop-detail/progress', data),
+  getProgressRecord: (instanceId: number) =>
+    api.get('/workshop-detail/progress-record', { params: { instanceId } }),
+  toggleLmsEnabled: (instanceId: number, lmsEnabled: boolean) =>
+    api.post('/workshop-detail/toggle-lms', { instanceId, lmsEnabled }),
   getTaskStructure: (instanceId: number, courseCode: string) =>
     api.get('/workshop-detail/task-structure', { params: { instanceId, courseCode } }),
   saveWizardResults: (data: object) => api.post('/workshop-detail/wizard-save', data),

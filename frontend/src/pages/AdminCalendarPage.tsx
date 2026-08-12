@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { workshopsApi, settingsApi } from '../api';
+import { workshopsApi, settingsApi, workshopDetailApi } from '../api';
 import type { CalendarData, WorkshopGroup, WorkshopDetail, WorkshopState } from '../types/workshops';
 import './AdminCalendarPage.css';
 
@@ -34,11 +34,208 @@ function getWorkshopClass(w: WorkshopDetail): string {
   return 'ws-expanded-past';
 }
 
+function WorkshopProgressModal({
+  instanceId,
+  title,
+  onClose,
+}: {
+  instanceId: number;
+  title: string;
+  onClose: () => void;
+}) {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [lmsEnabled, setLmsEnabled] = useState(false);
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    workshopDetailApi.getProgressRecord(instanceId)
+      .then((res) => {
+        setData(res.data);
+        setLmsEnabled(Boolean(res.data?.lmsEnabled));
+      })
+      .catch((err) => {
+        console.error('Failed to fetch progress record', err);
+      })
+      .finally(() => setLoading(false));
+  }, [instanceId]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setToast(null);
+    try {
+      await workshopDetailApi.toggleLmsEnabled(instanceId, lmsEnabled);
+      setToast({ type: 'success', message: 'LMS settings saved successfully!' });
+      setTimeout(() => {
+        onClose();
+      }, 1200);
+    } catch (err: any) {
+      setToast({ type: 'error', message: err?.response?.data?.message || 'Failed to save LMS setting' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        top: 0, left: 0, right: 0, bottom: 0,
+        backgroundColor: 'rgba(15, 23, 42, 0.6)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1100,
+        padding: 16,
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: '#ffffff',
+          borderRadius: 12,
+          padding: 24,
+          width: '100%',
+          maxWidth: 540,
+          boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 16,
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #e2e8f0', paddingBottom: 12 }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#0f172a' }}>
+              Workshop Progress & LMS Settings
+            </h2>
+            <p style={{ margin: '4px 0 0 0', fontSize: 13, color: '#64748b' }}>
+              {title} &bull; Instance #{instanceId}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#64748b' }}
+          >
+            &times;
+          </button>
+        </div>
+
+        {loading ? (
+          <div style={{ padding: '24px 0', textAlign: 'center', color: '#64748b' }}>
+            Loading progress record...
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Editable LMS Setting */}
+            <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: 14 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontWeight: 700, fontSize: 14, color: '#0369a1' }}>
+                <input
+                  type="checkbox"
+                  checked={lmsEnabled}
+                  onChange={(e) => setLmsEnabled(e.target.checked)}
+                  style={{ width: 18, height: 18, cursor: 'pointer' }}
+                />
+                LMS Managed in LSFA Central (lmsEnabled)
+              </label>
+              <p style={{ margin: '6px 0 0 28px', fontSize: 12, color: '#0284c7', lineHeight: 1.4 }}>
+                When enabled, students enrolled in this workshop will complete their online training in LSFA Central. When disabled, students use Axcelerate's native LMS portal.
+              </p>
+            </div>
+
+            {/* Read-Only Record Fields */}
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 14, display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}>
+              <h4 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#334155', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Record Details (Read-Only)
+              </h4>
+
+              <div>
+                <span style={{ color: '#64748b', fontWeight: 600 }}>Axcelerate Instance ID: </span>
+                <strong style={{ color: '#0f172a', fontFamily: 'monospace' }}>#{instanceId}</strong>
+              </div>
+
+              <div>
+                <span style={{ color: '#64748b', fontWeight: 600 }}>Assigned Learning Plan: </span>
+                <span style={{ color: '#0f172a' }}>
+                  {data?.learningPlan
+                    ? `${data.learningPlan.courseCode?.code || ''} - ${data.learningPlan.title || 'Plan v' + data.learningPlan.version}`
+                    : 'None assigned'}
+                </span>
+              </div>
+
+              <div>
+                <span style={{ color: '#64748b', fontWeight: 600 }}>Trainer Contact ID: </span>
+                <span style={{ color: '#0f172a' }}>{data?.trainerContactId || 'None'}</span>
+              </div>
+
+              <div>
+                <span style={{ color: '#64748b', fontWeight: 600 }}>Practical Observations Progress: </span>
+                <span style={{ color: '#0f172a' }}>
+                  {data?.completedSteps ?? 0} / {data?.totalSteps ?? 3} steps
+                  {data?.isComplete ? ' (✓ Overall Complete)' : ' (Incomplete)'}
+                </span>
+              </div>
+
+              <div>
+                <span style={{ color: '#64748b', fontWeight: 600 }}>Created At: </span>
+                <span style={{ color: '#0f172a' }}>{data?.createdAt ? new Date(data.createdAt).toLocaleString('en-AU') : 'Not yet created in DB'}</span>
+              </div>
+
+              <div>
+                <span style={{ color: '#64748b', fontWeight: 600 }}>Last Updated: </span>
+                <span style={{ color: '#0f172a' }}>{data?.updatedAt ? new Date(data.updatedAt).toLocaleString('en-AU') : 'N/A'}</span>
+              </div>
+            </div>
+
+            {toast && (
+              <div
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: 6,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  background: toast.type === 'success' ? '#dcfce7' : '#fee2e2',
+                  color: toast.type === 'success' ? '#166534' : '#991b1b',
+                  border: toast.type === 'success' ? '1px solid #bbf7d0' : '1px solid #fecaca',
+                }}
+              >
+                {toast.message}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, borderTop: '1px solid #e2e8f0', paddingTop: 14 }}>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ background: '#ffffff', color: '#334155', border: '1px solid #cbd5e1', padding: '8px 16px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || loading}
+            style={{ background: '#2563eb', color: '#ffffff', border: 'none', padding: '8px 20px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: (saving || loading) ? 0.7 : 1 }}
+          >
+            {saving ? 'Saving...' : 'Save Settings'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function GroupTile({
-  group, workshopBaseUrl, showTrainer, locationFilter, trainerFilter, forceExpanded,
+  group, workshopBaseUrl, showTrainer, locationFilter, trainerFilter, forceExpanded, onOpenProgressModal,
 }: {
   group: WorkshopGroup; workshopBaseUrl: string; showTrainer: boolean;
   locationFilter: string; trainerFilter: string; forceExpanded: boolean | null;
+  onOpenProgressModal: (instanceId: number, title: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -133,9 +330,34 @@ function GroupTile({
                 onClick={() => window.open(buildAxcelerateUrl(workshopBaseUrl, w.instanceId), '_blank', 'noopener')}
                 title="Open in Axcelerate"
               >
-                <div className="ws-course-title">
-                  {w.courseCode} – {w.shortName}
-                  {statusLower === 'tentative' ? ' (T)' : statusLower === 'cancelled' ? ' (C)' : ''}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div className="ws-course-title">
+                    {w.courseCode} – {w.shortName}
+                    {statusLower === 'tentative' ? ' (T)' : statusLower === 'cancelled' ? ' (C)' : ''}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenProgressModal(parseInt(w.instanceId, 10), `${w.courseCode} - ${w.shortName}`);
+                    }}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.85)',
+                      border: '1px solid rgba(0, 0, 0, 0.25)',
+                      borderRadius: 3,
+                      padding: '0px 4px',
+                      fontSize: 10,
+                      fontWeight: 'bold',
+                      lineHeight: 1.3,
+                      cursor: 'pointer',
+                      color: '#0f172a',
+                      marginLeft: 4,
+                      flexShrink: 0,
+                    }}
+                    title="View Workshop Progress & LMS Settings"
+                  >
+                    [...]
+                  </button>
                 </div>
                 <div className="ws-time">{w.startTime} – {w.endTime}</div>
                 {w.venueContactName && <div className="ws-venue-name">Client: {w.venueContactName}</div>}
@@ -171,6 +393,9 @@ export function AdminCalendarPage() {
   const [trainers, setTrainers] = useState<{ id: string; name: string }[]>([]);
   const [workshopBaseUrl, setWorkshopBaseUrl] = useState('');
   const [forceExpanded, setForceExpanded] = useState<boolean | null>(null);
+
+  // Workshop Progress Modal state
+  const [selectedWorkshopForProgress, setSelectedWorkshopForProgress] = useState<{ instanceId: number; title: string } | null>(null);
 
   useEffect(() => {
     workshopsApi.getFilters().then((res) => {
@@ -282,16 +507,42 @@ export function AdminCalendarPage() {
               <div key={dateStr} className={`cal-day${isToday ? ' cal-today' : ''}`}>
                 <div className="cal-day-number">{day}</div>
                 {dayData?.grouped?.map((g, gi) => (
-                  <GroupTile key={`p${gi}`} group={g} workshopBaseUrl={workshopBaseUrl} showTrainer locationFilter={locationFilter} trainerFilter={trainerFilter} forceExpanded={forceExpanded} />
+                  <GroupTile
+                    key={`p${gi}`}
+                    group={g}
+                    workshopBaseUrl={workshopBaseUrl}
+                    showTrainer
+                    locationFilter={locationFilter}
+                    trainerFilter={trainerFilter}
+                    forceExpanded={forceExpanded}
+                    onOpenProgressModal={(instanceId, title) => setSelectedWorkshopForProgress({ instanceId, title })}
+                  />
                 ))}
                 {dayData?.groupedPrivate?.map((g, gi) => (
-                  <GroupTile key={`r${gi}`} group={g} workshopBaseUrl={workshopBaseUrl} showTrainer locationFilter={locationFilter} trainerFilter={trainerFilter} forceExpanded={forceExpanded} />
+                  <GroupTile
+                    key={`r${gi}`}
+                    group={g}
+                    workshopBaseUrl={workshopBaseUrl}
+                    showTrainer
+                    locationFilter={locationFilter}
+                    trainerFilter={trainerFilter}
+                    forceExpanded={forceExpanded}
+                    onOpenProgressModal={(instanceId, title) => setSelectedWorkshopForProgress({ instanceId, title })}
+                  />
                 ))}
               </div>
             );
           })}
           {(() => { const trailing = 7 - ((firstDay + daysInMonth) % 7); return trailing < 7 ? Array.from({ length: trailing }, (_, i) => <div key={`t${i}`} className="cal-day cal-day-empty" />) : null; })()}
         </div>
+      )}
+
+      {selectedWorkshopForProgress && (
+        <WorkshopProgressModal
+          instanceId={selectedWorkshopForProgress.instanceId}
+          title={selectedWorkshopForProgress.title}
+          onClose={() => setSelectedWorkshopForProgress(null)}
+        />
       )}
     </div>
   );

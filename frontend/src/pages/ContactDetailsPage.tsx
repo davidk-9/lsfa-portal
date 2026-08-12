@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import AsyncSelect from 'react-select/async';
 import { contactsApi, usersApi, settingsApi } from '../api';
 import api from '../api/client';
@@ -136,6 +136,8 @@ export function ContactDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const contactIdNum = parseInt(id || '0', 10);
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const isEditMode = searchParams.get('mode') === 'edit';
   const toast = useToast();
 
   const [activeTab, setActiveTab] = useState<Tab>('personal');
@@ -153,6 +155,12 @@ export function ContactDetailsPage() {
   const [usiFeedback, setUsiFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [courseCodeOptions, setCourseCodeOptions] = useState<string[]>([]);
 
+  // Summary View State
+  const [enrolments, setEnrolments] = useState<any[]>([]);
+  const [enrolmentsLoading, setEnrolmentsLoading] = useState(false);
+  const [openAvetmissAccordion, setOpenAvetmissAccordion] = useState(false);
+  const [openDeclarationsAccordion, setOpenDeclarationsAccordion] = useState(false);
+
   // Linked User tab state
   const [linkedUser, setLinkedUser] = useState<any>(null);
   const [allUsers, setAllUsers] = useState<any[]>([]);
@@ -164,7 +172,22 @@ export function ContactDetailsPage() {
     loadContact();
     loadUsers();
     loadCourseCodes();
+    loadEnrolments();
   }, [contactIdNum]);
+
+  const loadEnrolments = async () => {
+    if (!contactIdNum) return;
+    setEnrolmentsLoading(true);
+    try {
+      const res = await contactsApi.getEnrolments(contactIdNum);
+      setEnrolments(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error('Failed to load student enrolments', err);
+      setEnrolments([]);
+    } finally {
+      setEnrolmentsLoading(false);
+    }
+  };
 
   const loadCourseCodes = async () => {
     try {
@@ -481,18 +504,358 @@ export function ContactDetailsPage() {
     return <div style={{ padding: 24, color: '#64748b' }}>Loading contact details...</div>;
   }
 
-  const fullName = [formData.givenName, formData.surname].filter(Boolean).join(' ') || 'Contact Details';
+  const fullName = [formData.givenName, formData.surname].filter(Boolean).join(' ') || 'Student Profile';
 
+  // ── Render Summary View (Default) ─────────────────────────────────────────
+  if (!isEditMode) {
+    return (
+      <div style={{ maxWidth: 1200, margin: '0 auto', paddingBottom: 60 }}>
+        {/* Summary Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 16 }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
+              <button type="button" onClick={() => navigate('/contacts')} style={secondaryButtonStyle}>
+                &larr; Back to Student Management
+              </button>
+              <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: '#0f172a' }}>{fullName}</h1>
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  padding: '3px 10px',
+                  borderRadius: 12,
+                  background: formData.contactActive !== false ? '#dcfce7' : '#fee2e2',
+                  color: formData.contactActive !== false ? '#166534' : '#991b1b',
+                  border: formData.contactActive !== false ? '1px solid #bbf7d0' : '1px solid #fecaca',
+                }}
+              >
+                {formData.contactActive !== false ? 'Active' : 'Inactive'}
+              </span>
+            </div>
+            <p style={{ color: '#64748b', marginTop: 4, marginBottom: 0 }}>
+              Student Summary & LMS Enrolment Overview (Contact ID: #{formData.contactId ?? 'N/A'}).
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 12px', background: formData.bypassOnboarding ? '#fef3c7' : '#f8fafc', border: `1px solid ${formData.bypassOnboarding ? '#fde68a' : '#cbd5e1'}`, borderRadius: 6, fontSize: 13, fontWeight: 600, color: formData.bypassOnboarding ? '#92400e' : '#334155', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={Boolean(formData.bypassOnboarding)}
+                onChange={async (e) => {
+                  const val = e.target.checked;
+                  handleChange('bypassOnboarding', val);
+                  try {
+                    await contactsApi.updateById(contactIdNum, { bypassOnboarding: val });
+                    toast.success(`Onboarding guard ${val ? 'bypassed' : 'enabled'} for student`);
+                  } catch (err: any) {
+                    toast.error(err?.response?.data?.message || 'Failed to update bypass status');
+                  }
+                }}
+              />
+              Bypass Onboarding Guard
+            </label>
+
+            <button type="button" onClick={handleSyncAxcelerate} style={secondaryButtonStyle} disabled={syncing}>
+              {syncing ? 'Syncing...' : 'Sync from Axcelerate'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSearchParams({ mode: 'edit' })}
+              style={primaryButtonStyle}
+            >
+              Edit Details
+            </button>
+          </div>
+        </div>
+
+        {/* 2-Column Summary Grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 440px) 1fr', gap: 24, alignItems: 'start' }}>
+          
+          {/* Left Column: Read-Only Student Profile & Collapsible Accordions */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Main Info Card */}
+            <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9', paddingBottom: 10 }}>
+                <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: '#0f172a' }}>Student Overview</h3>
+                <button
+                  type="button"
+                  onClick={() => setSearchParams({ mode: 'edit' })}
+                  style={{ ...secondaryButtonStyle, padding: '4px 10px', fontSize: 12 }}
+                >
+                  Edit Details
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}>
+                <div>
+                  <span style={{ color: '#64748b', fontWeight: 600 }}>Full Name: </span>
+                  <strong style={{ color: '#0f172a' }}>{[formData.givenName, formData.middleName, formData.surname].filter(Boolean).join(' ') || 'N/A'}</strong>
+                </div>
+                <div>
+                  <span style={{ color: '#64748b', fontWeight: 600 }}>Date of Birth: </span>
+                  <span style={{ color: '#0f172a' }}>{formData.dob || 'Not specified'}</span>
+                </div>
+                <div>
+                  <span style={{ color: '#64748b', fontWeight: 600 }}>Gender / Sex: </span>
+                  <span style={{ color: '#0f172a' }}>{formData.sex === 'M' ? 'Male (M)' : formData.sex === 'F' ? 'Female (F)' : formData.sex || 'Not specified'}</span>
+                </div>
+                <div>
+                  <span style={{ color: '#64748b', fontWeight: 600 }}>Email Address: </span>
+                  <span style={{ color: '#0f172a' }}>{formData.emailAddress || 'None'}</span>
+                </div>
+                <div>
+                  <span style={{ color: '#64748b', fontWeight: 600 }}>Mobile / Phone: </span>
+                  <span style={{ color: '#0f172a' }}>{formData.mobilePhone || formData.phone || 'None'}</span>
+                </div>
+                <div>
+                  <span style={{ color: '#64748b', fontWeight: 600 }}>Residential Address: </span>
+                  <span style={{ color: '#0f172a' }}>{formData.fullAddress || 'No address provided'}</span>
+                </div>
+                <div>
+                  <span style={{ color: '#64748b', fontWeight: 600 }}>USI: </span>
+                  <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#0f172a' }}>{formData.usi || '-'}</span>
+                  {formData.usiVerified ? (
+                    <span style={{ marginLeft: 8, fontSize: 11, padding: '2px 6px', borderRadius: 4, background: '#dcfce7', color: '#166534', border: '1px solid #bbf7d0', fontWeight: 600 }}>✓ Verified</span>
+                  ) : formData.usi ? (
+                    <span style={{ marginLeft: 8, fontSize: 11, padding: '2px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', fontWeight: 600 }}>Unverified</span>
+                  ) : null}
+                </div>
+                <div>
+                  <span style={{ color: '#64748b', fontWeight: 600 }}>Emergency Contact: </span>
+                  <span style={{ color: '#0f172a' }}>
+                    {formData.emergencyContact ? `${formData.emergencyContact} (${formData.emergencyContactRelation || 'Relation'}) - ${formData.emergencyContactPhone || 'No phone'}` : 'None'}
+                  </span>
+                </div>
+                <div>
+                  <span style={{ color: '#64748b', fontWeight: 600 }}>Linked User Account: </span>
+                  {linkedUser ? (
+                    <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 12, background: '#dcfce7', color: '#166534', border: '1px solid #bbf7d0' }}>
+                      {linkedUser.email} ({linkedUser.role})
+                    </span>
+                  ) : (
+                    <span style={{ color: '#94a3b8' }}>Unlinked</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Accordion 1: AVETMISS Details */}
+            <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
+              <button
+                type="button"
+                onClick={() => setOpenAvetmissAccordion(!openAvetmissAccordion)}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '14px 18px',
+                  background: '#f8fafc',
+                  border: 'none',
+                  borderBottom: openAvetmissAccordion ? '1px solid #e2e8f0' : 'none',
+                  cursor: 'pointer',
+                  fontWeight: 700,
+                  fontSize: 14,
+                  color: '#0f172a',
+                  textAlign: 'left',
+                }}
+              >
+                <span>AVETMISS Compliance Data</span>
+                <span>{openAvetmissAccordion ? '▲' : '▼'}</span>
+              </button>
+
+              {openAvetmissAccordion && (
+                <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}>
+                  <div>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>Indigenous Status: </span>
+                    <span>{indigenousStatusOptions.find(o => o.value === String(formData.indigenousStatusId))?.label || 'Not specified'}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>Country of Birth: </span>
+                    <span>{formData.countryOfBirthName || saccOptions.find(o => o.value === String(formData.countryOfBirthId))?.label || 'Not specified'}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>Main Language Spoken: </span>
+                    <span>{formData.mainLanguageName || asclOptions.find(o => o.value === String(formData.mainLanguageId))?.label || 'Not specified'}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>English Proficiency: </span>
+                    <span>{englishProficiencyOptions.find(o => o.value === String(formData.englishProficiencyId))?.label || 'Not specified'}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>Highest School Level: </span>
+                    <span>{highestSchoolLevelCompletedOptions.find(o => o.value === String(formData.highestSchoolLevelId))?.label || 'Not specified'}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>Labour Force Status: </span>
+                    <span>{labourForceStatusOptions.find(o => o.value === String(formData.labourForceId))?.label || 'Not specified'}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>Study Reason: </span>
+                    <span>{studyReasonOptions.find(o => o.value === String(formData.studyReasonId))?.label || 'Not specified'}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>Disability: </span>
+                    <span>{formData.disabilityFlag ? 'Yes' : 'No'}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>Prior Education: </span>
+                    <span>{formData.priorEducationStatus ? 'Yes' : 'No'}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Accordion 2: Declarations & Support */}
+            <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
+              <button
+                type="button"
+                onClick={() => setOpenDeclarationsAccordion(!openDeclarationsAccordion)}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '14px 18px',
+                  background: '#f8fafc',
+                  border: 'none',
+                  borderBottom: openDeclarationsAccordion ? '1px solid #e2e8f0' : 'none',
+                  cursor: 'pointer',
+                  fontWeight: 700,
+                  fontSize: 14,
+                  color: '#0f172a',
+                  textAlign: 'left',
+                }}
+              >
+                <span>Declarations & Support</span>
+                <span>{openDeclarationsAccordion ? '▲' : '▼'}</span>
+              </button>
+
+              {openDeclarationsAccordion && (
+                <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}>
+                  <div>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>Combined AVETMISS Declaration: </span>
+                    <span>{formData.customFieldCombinedDeclaration || 'Not completed'}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>USI Transcript Permission: </span>
+                    <span>{formData.customFieldUsiPermission || 'Not granted'}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>Marketing Permission: </span>
+                    <span>{formData.customFieldMarketingPermission || 'Not specified'}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>Parent / Guardian Full Name: </span>
+                    <span>{formData.customFieldParentGuardianFullName || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>Wellbeing Requirements: </span>
+                    <span>{formData.customFieldWellbeingRequirements || 'None specified'}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Right Column: Enrolments History Table */}
+          <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: '#0f172a' }}>
+                Course Enrolments ({enrolments.length})
+              </h3>
+            </div>
+
+            {enrolmentsLoading ? (
+              <div style={{ padding: 16, color: '#64748b' }}>Loading enrolments...</div>
+            ) : enrolments.length === 0 ? (
+              <div style={{ padding: 20, background: '#f8fafc', borderRadius: 6, border: '1px solid #e2e8f0', color: '#64748b', fontSize: 13 }}>
+                No LMS enrolments recorded for this student yet.
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', textAlign: 'left' }}>
+                      <th style={{ padding: '10px 12px', fontWeight: 600, color: '#475569' }}>Course / Plan</th>
+                      <th style={{ padding: '10px 12px', fontWeight: 600, color: '#475569' }}>Mode</th>
+                      <th style={{ padding: '10px 12px', fontWeight: 600, color: '#475569' }}>Enrolled Date</th>
+                      <th style={{ padding: '10px 12px', fontWeight: 600, color: '#475569' }}>Status</th>
+                      <th style={{ padding: '10px 12px', fontWeight: 600, color: '#475569' }}>Workshop</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {enrolments.map((enr) => {
+                      const planTitle = enr.learningPlan?.title || enr.learningPlan?.courseCode?.name || 'HLTAID Course';
+                      const code = enr.learningPlan?.courseCode?.code || 'Course';
+                      const modeLabel = enr.learningMode === 3 ? 'DeepDive' : enr.learningMode === 2 ? 'Assessment' : `Mode ${enr.learningMode}`;
+                      const dateStr = enr.enrolledAt ? new Date(enr.enrolledAt).toLocaleDateString('en-AU') : '-';
+
+                      return (
+                        <tr key={enr.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '10px 12px' }}>
+                            <strong>{code}</strong>
+                            <div style={{ fontSize: 12, color: '#64748b' }}>{planTitle}</div>
+                          </td>
+                          <td style={{ padding: '10px 12px' }}>
+                            <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, background: '#f1f5f9', color: '#334155' }}>
+                              {modeLabel}
+                            </span>
+                          </td>
+                          <td style={{ padding: '10px 12px' }}>{dateStr}</td>
+                          <td style={{ padding: '10px 12px' }}>
+                            {enr.isCompetent ? (
+                              <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 12, background: '#dcfce7', color: '#166534', border: '1px solid #bbf7d0', fontWeight: 600 }}>
+                                ✓ Competent
+                              </span>
+                            ) : (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 12, background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', fontWeight: 500, width: 'fit-content' }}>
+                                  In Progress ({enr.currentScore || 0}/{enr.possibleScore || '-'})
+                                </span>
+                                {enr.axStatus && (
+                                  <span style={{ fontSize: 11, color: '#64748b' }}>
+                                    Axcelerate Status: <strong>{enr.axStatus === 'B' ? 'Booked (B)' : enr.axStatus === 'T' ? 'Tentative (T)' : enr.axStatus === 'P' ? 'Paid (P)' : enr.axStatus === 'M' ? 'Moved (M)' : enr.axStatus === 'C' ? 'Cancelled (C)' : enr.axStatus}</strong>
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                          <td style={{ padding: '10px 12px' }}>
+                            {enr.instanceId ? (
+                              <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#0f172a' }}>
+                                #{enr.instanceId}
+                              </span>
+                            ) : (
+                              <span style={{ color: '#94a3b8' }}>-</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Render Full Edit Form ──────────────────────────────────────────────────
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto', paddingBottom: 60 }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
-            <button type="button" onClick={() => navigate('/contacts')} style={secondaryButtonStyle}>
-              &larr; Back to Contacts
+            <button type="button" onClick={() => setSearchParams({})} style={secondaryButtonStyle}>
+              &larr; Back to Student Summary
             </button>
-            <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: '#0f172a' }}>{fullName}</h1>
+            <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: '#0f172a' }}>Editing {fullName}</h1>
             <span
               style={{
                 fontSize: 12,
@@ -508,10 +871,27 @@ export function ContactDetailsPage() {
             </span>
           </div>
           <p style={{ color: '#64748b', marginTop: 4, marginBottom: 0 }}>
-            View and update student contact profile (Contact ID: #{formData.contactId ?? 'N/A'}).
+            Update student details and AVETMISS compliance fields.
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 12 }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 12px', background: formData.bypassOnboarding ? '#fef3c7' : '#f8fafc', border: `1px solid ${formData.bypassOnboarding ? '#fde68a' : '#cbd5e1'}`, borderRadius: 6, fontSize: 13, fontWeight: 600, color: formData.bypassOnboarding ? '#92400e' : '#334155', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={Boolean(formData.bypassOnboarding)}
+              onChange={async (e) => {
+                const val = e.target.checked;
+                handleChange('bypassOnboarding', val);
+                try {
+                  await contactsApi.updateById(contactIdNum, { bypassOnboarding: val });
+                  toast.success(`Onboarding guard ${val ? 'bypassed' : 'enabled'} for student`);
+                } catch (err: any) {
+                  toast.error(err?.response?.data?.message || 'Failed to update bypass status');
+                }
+              }}
+            />
+            Bypass Onboarding Guard
+          </label>
           <button
             type="button"
             onClick={async () => {

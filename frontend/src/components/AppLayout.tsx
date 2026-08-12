@@ -119,6 +119,16 @@ function ProfileIcon() {
   );
 }
 
+function LmsAdminIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
+      <path d="M6 6h10" />
+      <path d="M6 10h10" />
+    </svg>
+  );
+}
+
 function LogoutIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -228,9 +238,9 @@ export function AppLayout() {
               {isSuperOrAdmin && (
                 <>
                   <div className="nav-section-label">{collapsed ? 'ADM' : 'Administration'}</div>
-                  <NavLink to="/contacts" className={({ isActive }) => getSidebarLinkClassName(isActive, collapsed)} title="Contact Management">
+                  <NavLink to="/contacts" className={({ isActive }) => getSidebarLinkClassName(isActive, collapsed)} title="Student Management">
                     <span className="nav-link-icon"><ContactsIcon /></span>
-                    {!collapsed && <span className="nav-link-label">Contact Management</span>}
+                    {!collapsed && <span className="nav-link-label">Student Management</span>}
                   </NavLink>
                   <NavLink to="/admin-calendar" className={({ isActive }) => getSidebarLinkClassName(isActive, collapsed)} title="Admin Calendar">
                     <span className="nav-link-icon"><AdminCalendarIcon /></span>
@@ -239,6 +249,10 @@ export function AppLayout() {
                   <NavLink to="/trainers" className={({ isActive }) => getSidebarLinkClassName(isActive, collapsed)} title="Trainer Portal">
                     <span className="nav-link-icon"><TrainerPortalIcon /></span>
                     {!collapsed && <span className="nav-link-label">Trainer Portal</span>}
+                  </NavLink>
+                  <NavLink to="/lms-admin" className={({ isActive }) => getSidebarLinkClassName(isActive, collapsed)} title="LMS Management">
+                    <span className="nav-link-icon"><LmsAdminIcon /></span>
+                    {!collapsed && <span className="nav-link-label">LMS Management</span>}
                   </NavLink>
                 </>
               )}

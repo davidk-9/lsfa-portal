@@ -45,7 +45,7 @@ export class UploadsController {
   // EXTRA images go in an HTML field as a <br>-separated list of <a> links. Recomputed
   // from the DB so it stays correct after uploads and deletes. Throws on API failure.
   private async syncEvidenceFieldToAxcelerate(instanceId: number, contactId: number, kind: string): Promise<void> {
-    if (!contactId) return;
+    if (!contactId || contactId <= 0 || contactId >= 900000000) return;
 
     if (kind === 'image') {
       const rows = await this.prisma.workshopUpload.findMany({
@@ -137,7 +137,7 @@ export class UploadsController {
 
     // Port of PHP ajax_upload_checklist_pdf: sync URL to Axcelerate when uploading a checklist PDF.
     // We push the durable proxy URL so the link stored in Axcelerate never breaks.
-    if (kind === 'checklist' && contactId) {
+    if (kind === 'checklist' && contactId && contactId > 0 && contactId < 900000000) {
       try {
         await this.axcelerate.putEnrolmentChecklistUrl(instanceId, contactId, proxyUrl);
         await this.prisma.workshopUpload.update({
@@ -152,7 +152,7 @@ export class UploadsController {
           data: { status: 'sync_failed' },
         });
       }
-    } else if ((kind === 'sd' || kind === 'if' || kind === 'image') && contactId) {
+    } else if ((kind === 'sd' || kind === 'if' || kind === 'image') && contactId && contactId > 0 && contactId < 900000000) {
       // Sync SD / IF / additional-evidence proxy URL(s) to the matching custom field.
       try {
         await this.syncEvidenceFieldToAxcelerate(instanceId, contactId, kind);
@@ -191,7 +191,7 @@ export class UploadsController {
     // Re-sync the matching Axcelerate custom field now that this file is gone.
     // Checklist clears its field; SD/IF/+ are recomputed from the remaining active files
     // (the deleted row is already excluded). Port of the plugin's delete behaviour.
-    if (row.contactId) {
+    if (row.contactId && row.contactId > 0 && row.contactId < 900000000) {
       try {
         if (row.kind === 'checklist' || row.portfolioTypeId === null) {
           await this.axcelerate.putEnrolmentChecklistUrl(row.instanceId, row.contactId, '');

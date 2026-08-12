@@ -33,6 +33,11 @@ export function StudentOnboardingGuard({ children }: Props) {
       const contactData = res.data || {};
       setContact(contactData);
 
+      if (contactData.bypassOnboarding === true || contactData.bypassOnboarding === 'true') {
+        setStep('complete');
+        return;
+      }
+
       const valResult = validateStudentOnboarding(contactData);
       setValidation(valResult);
 

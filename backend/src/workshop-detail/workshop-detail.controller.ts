@@ -74,6 +74,19 @@ export class WorkshopDetailController {
     return this.service.saveWorkshopProgress(dto.instanceId, dto.trainerContactId, dto.status);
   }
 
+  @Get('progress-record')
+  getProgressRecord(@Query('instanceId', ParseIntPipe) instanceId: number) {
+    return this.service.getWorkshopProgressRecord(instanceId);
+  }
+
+  @Post('toggle-lms')
+  toggleLmsEnabled(
+    @Body('instanceId', ParseIntPipe) instanceId: number,
+    @Body('lmsEnabled') lmsEnabled: boolean,
+  ) {
+    return this.service.toggleLmsEnabled(instanceId, lmsEnabled);
+  }
+
   @Get('task-structure')
   getTaskStructure(
     @Query('instanceId', ParseIntPipe) instanceId: number,

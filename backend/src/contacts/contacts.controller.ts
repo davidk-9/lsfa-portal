@@ -15,6 +15,12 @@ export class ContactsController {
     return this.contactsService.getContactForUser(req.user.id);
   }
 
+  @Get('me/enrolments')
+  async getMyEnrolments(@Request() req) {
+    const contact = await this.contactsService.getContactForUser(req.user.id);
+    return this.contactsService.getContactEnrolments(contact.id);
+  }
+
   @Patch('me')
   updateMyContact(@Request() req, @Body() body: any) {
     return this.contactsService.updateContactForUser(req.user.id, body);
@@ -56,6 +62,17 @@ export class ContactsController {
       .syncUsersWithVerifiedUsiStream(verifyAxcelerate, (event) => subject.next({ data: event }))
       .finally(() => subject.complete());
     return subject.asObservable();
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles('SUPER_USER', 'ADMIN', 'TRAINER')
+  @Get(':id/enrolments')
+  getContactEnrolments(@Request() req) {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) {
+      throw new BadRequestException('Invalid contact ID parameter');
+    }
+    return this.contactsService.getContactEnrolments(id);
   }
 
   @UseGuards(RolesGuard)

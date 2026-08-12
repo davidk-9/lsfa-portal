@@ -1,12 +1,36 @@
+import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { contactsApi } from '../api';
 
 export function DashboardPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
 
+  const [enrolments, setEnrolments] = useState<any[]>([]);
+  const [loadingEnrolments, setLoadingEnrolments] = useState(true);
+
   const isTrainerOrAbove = user?.role === 'SUPER_USER' || user?.role === 'ADMIN' || user?.role === 'TRAINER';
   const isAdminOrAbove = user?.role === 'SUPER_USER' || user?.role === 'ADMIN';
+
+  useEffect(() => {
+    if (user) {
+      loadEnrolments();
+    }
+  }, [user]);
+
+  const loadEnrolments = async () => {
+    setLoadingEnrolments(true);
+    try {
+      const res = await contactsApi.getMyEnrolments();
+      setEnrolments(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error('Failed to load enrolments for student dashboard:', err);
+      setEnrolments([]);
+    } finally {
+      setLoadingEnrolments(false);
+    }
+  };
 
   return (
     <div style={{ maxWidth: 900, margin: '0 auto', paddingBottom: 40 }}>
@@ -15,29 +39,131 @@ export function DashboardPage() {
         <p style={{ color: '#64748b', marginTop: 4 }}>Welcome back, {user?.name || user?.email} ({user?.role?.replace('_', ' ')})</p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>
-        {/* Axcelerate Online Learning Card */}
-        <div style={{ ...cardStyle, background: '#f0f9ff', borderColor: '#bae6fd' }}>
-          <div style={{ ...iconBadgeStyle, background: '#e0f2fe' }}>🎓</div>
-          <h3 style={{ margin: '12px 0 6px 0', fontSize: 18, color: '#0369a1' }}>Online Learning Portal</h3>
-          <p style={{ color: '#0369a1', fontSize: 14, marginBottom: 20, flex: 1, lineHeight: 1.5 }}>
-            Access your online learning modules in Axcelerate to complete your pre-course learning before your practical workshop.
-          </p>
-          <a
-            href="https://lifesavingfirstaid.app.axcelerate.com/learner"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              ...buttonStyle,
-              background: '#0284c7',
-              textDecoration: 'none',
-              display: 'inline-block',
-              textAlign: 'center',
-            }}
-          >
-            Go to Online Learning &rarr;
-          </a>
-        </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
+        {/* Dynamic Enrolment / Online Learning Cards */}
+        {loadingEnrolments ? (
+          <div style={{ ...cardStyle, background: '#f8fafc', color: '#64748b' }}>
+            Loading your online learning modules...
+          </div>
+        ) : enrolments.length === 0 ? (
+          /* Default Axcelerate Online Learning Card when no enrolments exist */
+          <div style={{ ...cardStyle, background: '#f0f9ff', borderColor: '#bae6fd' }}>
+            <div style={{ ...iconBadgeStyle, background: '#e0f2fe' }}>🎓</div>
+            <h3 style={{ margin: '12px 0 6px 0', fontSize: 18, color: '#0369a1' }}>Online Learning Portal</h3>
+            <p style={{ color: '#0369a1', fontSize: 14, marginBottom: 20, flex: 1, lineHeight: 1.5 }}>
+              Access your online learning modules in Axcelerate to complete your pre-course learning before your practical workshop.
+            </p>
+            <a
+              href="https://lifesavingfirstaid.app.axcelerate.com/learner"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                ...buttonStyle,
+                background: '#0284c7',
+                textDecoration: 'none',
+                display: 'inline-block',
+                textAlign: 'center',
+              }}
+            >
+              Go to Online Learning &rarr;
+            </a>
+          </div>
+        ) : (
+          /* Dedicated card for each enrolment */
+          enrolments.map((enr) => {
+            const isLsfaLms =
+              enr.workshopProgress?.lmsEnabled === true ||
+              (!enr.workshopProgress && Boolean(enr.learningPlanId));
+
+            const code =
+              enr.learningPlan?.courseCode?.code ||
+              enr.courseCodeStr ||
+              'HLTAID Course';
+            const courseName =
+              enr.learningPlan?.courseCode?.name ||
+              enr.learningPlan?.title ||
+              'Online Learning Module';
+            const modeLabel =
+              enr.learningMode === 3 ? 'DeepDive' : enr.learningMode === 2 ? 'Assessment' : `Mode ${enr.learningMode}`;
+
+            if (isLsfaLms) {
+              return (
+                <div key={enr.id} style={{ ...cardStyle, background: '#f0fdf4', borderColor: '#bbf7d0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ ...iconBadgeStyle, background: '#dcfce7', color: '#166534' }}>📚</div>
+                    {enr.isCompetent ? (
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 12, background: '#dcfce7', color: '#166534', border: '1px solid #bbf7d0' }}>
+                        ✓ Competent
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 12, background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd' }}>
+                        LSFA LMS &bull; {modeLabel}
+                      </span>
+                    )}
+                  </div>
+
+                  <h3 style={{ margin: '12px 0 4px 0', fontSize: 18, color: '#065f46' }}>{code}</h3>
+                  <p style={{ margin: '0 0 12px 0', fontSize: 13, color: '#047857', fontWeight: 500 }}>{courseName}</p>
+
+                  <p style={{ color: '#047857', fontSize: 13, marginBottom: 20, flex: 1, lineHeight: 1.5 }}>
+                    {enr.isCompetent
+                      ? 'You have successfully completed this LMS learning plan.'
+                      : `Complete your online training modules in LSFA Central. Current Score: ${enr.currentScore || 0}/${enr.possibleScore || '-'}.`}
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/lms/start/${enr.id}`)}
+                    style={{
+                      ...buttonStyle,
+                      background: '#059669',
+                      border: 'none',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {enr.isCompetent ? 'Review Course Material →' : 'Start / Continue Learning →'}
+                  </button>
+                </div>
+              );
+            }
+
+            /* Axcelerate LMS Enrolment Card */
+            return (
+              <div key={enr.id} style={{ ...cardStyle, background: '#f0f9ff', borderColor: '#bae6fd' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div style={{ ...iconBadgeStyle, background: '#e0f2fe', color: '#0369a1' }}>🎓</div>
+                  <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 12, background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd' }}>
+                    Axcelerate Portal
+                  </span>
+                </div>
+
+                <h3 style={{ margin: '12px 0 4px 0', fontSize: 18, color: '#0369a1' }}>{code}</h3>
+                <p style={{ margin: '0 0 12px 0', fontSize: 13, color: '#0284c7', fontWeight: 500 }}>
+                  {courseName} {enr.instanceId ? `(Workshop #${enr.instanceId})` : ''} {enr.axStatus ? `• Status: ${enr.axStatus === 'B' ? 'Booked' : enr.axStatus === 'T' ? 'Tentative' : enr.axStatus === 'P' ? 'Paid' : enr.axStatus === 'M' ? 'Moved' : enr.axStatus === 'C' ? 'Cancelled' : enr.axStatus}` : ''}
+                </p>
+
+                <p style={{ color: '#0369a1', fontSize: 13, marginBottom: 20, flex: 1, lineHeight: 1.5 }}>
+                  This workshop uses Axcelerate Online Learning. Click below to access your learning modules in Axcelerate.
+                </p>
+
+                <a
+                  href="https://lifesavingfirstaid.app.axcelerate.com/learner"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    ...buttonStyle,
+                    background: '#0284c7',
+                    textDecoration: 'none',
+                    display: 'inline-block',
+                    textAlign: 'center',
+                  }}
+                >
+                  Go to Axcelerate Learning &rarr;
+                </a>
+              </div>
+            );
+          })
+        )}
 
         {/* Student Details Card */}
         <div style={cardStyle}>
