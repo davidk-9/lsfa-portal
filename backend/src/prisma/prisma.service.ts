@@ -16,6 +16,13 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
   async onModuleInit() {
     await this.$connect();
+    try {
+      await this.$executeRawUnsafe(`
+        ALTER TABLE "LmsEnrollment" DROP CONSTRAINT IF EXISTS "LmsEnrollment_instanceId_fkey";
+      `);
+    } catch (err: any) {
+      // Ignore if table/constraint does not exist on startup
+    }
   }
 
   async onModuleDestroy() {
