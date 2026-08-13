@@ -3,6 +3,32 @@ import { lmsAdminApi, type KnowledgeEvidence, type Chapter, type LearningBlob, t
 import { settingsApi } from '../api';
 import { QuestionType } from '../lms/types/lms';
 
+function parseVideoInput(val: string): { azureBlobUrl: string; vimeoId: string } {
+  const trimmed = val.trim();
+  if (!trimmed) return { azureBlobUrl: '', vimeoId: '' };
+
+  let target = trimmed;
+  // 1. If full <iframe ... src="..."> snippet is pasted
+  const iframeMatch = trimmed.match(/src=["']([^"']+)["']/i);
+  if (iframeMatch) {
+    target = iframeMatch[1];
+  }
+
+  // 2. Check if Vimeo URL (e.g. https://player.vimeo.com/video/918974090?h=709bcc1633 or https://vimeo.com/918974090)
+  const vimeoUrlMatch = target.match(/vimeo\.com\/(?:video\/)?([a-zA-Z0-9_\-?=&]+)/i);
+  if (vimeoUrlMatch) {
+    return { azureBlobUrl: '', vimeoId: vimeoUrlMatch[1] };
+  }
+
+  // 3. If raw numeric Vimeo ID or ID with query string (e.g. 918974090 or 918974090?h=709bcc1633)
+  if (/^\d+(\?[a-zA-Z0-9_=&-]+)?$/.test(target)) {
+    return { azureBlobUrl: '', vimeoId: target };
+  }
+
+  // 4. Otherwise treat as direct Azure Blob / MP4 video URL
+  return { azureBlobUrl: target, vimeoId: '' };
+}
+
 export function LmsAdminPage() {
   const [activeTab, setActiveTab] = useState<'ke' | 'content' | 'questions' | 'plans'>('ke');
   const [contentSubTab, setContentSubTab] = useState<'blobs' | 'chapters'>('blobs');
@@ -1542,8 +1568,22 @@ export function LmsAdminPage() {
                 </div>
               </div>
               <label>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>Azure Blob Video URL / Vimeo ID:</div>
-                <input type="text" placeholder="https://myazureblob.net/video.mp4 or Vimeo ID" value={blobForm.azureBlobUrl || blobForm.vimeoId} onChange={(e) => setBlobForm({ ...blobForm, azureBlobUrl: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }} />
+                <div style={{ fontSize: 13, fontWeight: 600 }}>Azure Blob Video URL / Vimeo Embed / Vimeo ID:</div>
+                <input
+                  type="text"
+                  placeholder="Paste Vimeo ID (e.g. 918974090?h=709bcc1633), iframe embed code, or Azure MP4 URL"
+                  value={blobForm.vimeoId || blobForm.azureBlobUrl}
+                  onChange={(e) => {
+                    const parsed = parseVideoInput(e.target.value);
+                    setBlobForm({ ...blobForm, azureBlobUrl: parsed.azureBlobUrl, vimeoId: parsed.vimeoId });
+                  }}
+                  style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }}
+                />
+                {(blobForm.vimeoId || blobForm.azureBlobUrl) && (
+                  <div style={{ fontSize: 11, color: '#2563eb', marginTop: 4, fontWeight: 600 }}>
+                    {blobForm.vimeoId ? `✓ Detected Vimeo ID: ${blobForm.vimeoId}` : `✓ Detected Direct Video URL: ${blobForm.azureBlobUrl}`}
+                  </div>
+                )}
               </label>
               <label>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>Text / Graphic Content (HTML):</div>
