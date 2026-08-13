@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { lmsAdminApi, type KnowledgeEvidence, type Chapter, type LearningBlob, type QuestionBankItem, type QuestionBank, type LearningPlan } from '../api/lmsAdmin';
 import { settingsApi } from '../api';
 import { QuestionType } from '../lms/types/lms';
+import { LmsVideoPlayer } from '../lms/components/media/LmsVideoPlayer';
 
 function parseVideoInput(val: string): { azureBlobUrl: string; vimeoId: string } {
   const trimmed = val.trim();
@@ -72,6 +73,8 @@ export function LmsAdminPage() {
     courseCodeId: null,
     questionIds: [],
   });
+
+  const [previewModal, setPreviewModal] = useState<{ open: boolean; blob?: LearningBlob | null }>({ open: false });
 
   const [blobModal, setBlobModal] = useState<{ open: boolean; chapterId?: string; item?: LearningBlob | null }>({ open: false });
   const [blobForm, setBlobForm] = useState<{
@@ -339,6 +342,10 @@ export function LmsAdminPage() {
   };
 
   // ── Blob (Content Block) Actions ─────────────────────────────────────────────
+  const handleOpenPreviewModal = (blob: LearningBlob) => {
+    setPreviewModal({ open: true, blob });
+  };
+
   const handleOpenBlobModal = (chapterId: string, blob?: LearningBlob) => {
     if (blob) {
       setBlobForm({
@@ -1009,6 +1016,7 @@ export function LmsAdminPage() {
                           )}
                         </td>
                         <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                          <button type="button" onClick={() => handleOpenPreviewModal(b)} style={{ padding: '4px 8px', marginRight: 6, backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}>👁️ Preview Block</button>
                           <button type="button" onClick={() => handleOpenBlobModal(b.chapterId || '', b)} style={{ padding: '4px 8px', marginRight: 6, backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 4, cursor: 'pointer' }}>Edit</button>
                           <button type="button" onClick={() => handleDeleteBlob(b.id)} style={{ padding: '4px 8px', backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 4, cursor: 'pointer' }}>Delete</button>
                         </td>
@@ -1091,6 +1099,7 @@ export function LmsAdminPage() {
                             <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>{b.description}</div>
                           </div>
                           <div>
+                            <button type="button" onClick={() => handleOpenPreviewModal(b)} style={{ padding: '4px 8px', marginRight: 6, backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}>👁️ Preview Block</button>
                             <button type="button" onClick={() => handleOpenBlobModal(ch.id, b)} style={{ padding: '4px 8px', backgroundColor: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 4, cursor: 'pointer', marginRight: 6 }}>Edit Block</button>
                             <button type="button" onClick={() => handleDeleteBlob(b.id)} style={{ padding: '4px 8px', backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 4, cursor: 'pointer' }}>Delete</button>
                           </div>
@@ -2345,6 +2354,93 @@ export function LmsAdminPage() {
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
               <button type="button" onClick={() => setPlanModal({ open: false })} style={{ padding: '8px 16px', borderRadius: 4, border: '1px solid #ccc' }}>Cancel</button>
               <button type="button" onClick={handleSavePlan} style={{ padding: '8px 16px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: 4, fontWeight: 600 }}>Save Plan</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: Preview Content Block ─────────────────────────────────────── */}
+      {previewModal.open && previewModal.blob && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ backgroundColor: '#ffffff', borderRadius: 12, padding: 24, maxWidth: 800, width: '90%', maxHeight: '90vh', overflowY: 'auto', border: '1px solid #cbd5e1', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, borderBottom: '1px solid #e2e8f0', paddingBottom: 12 }}>
+              <div>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#2563eb', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  👁️ Student View Preview
+                </span>
+                <h2 style={{ margin: '4px 0 0 0', fontSize: 20, fontWeight: 700, color: '#0f172a' }}>
+                  📦 {previewModal.blob.title}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewModal({ open: false })}
+                style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#64748b', lineHeight: 1 }}
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Mapped Knowledge Evidences */}
+            {previewModal.blob.knowledgeEvidences && previewModal.blob.knowledgeEvidences.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+                {previewModal.blob.knowledgeEvidences.map((k) => (
+                  <span key={k.id} style={{ padding: '2px 8px', backgroundColor: '#eff6ff', color: '#1e40af', borderRadius: 4, fontSize: 12, fontWeight: 600, border: '1px solid #bfdbfe' }}>
+                    KE: {k.code} &ndash; {k.title}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Block Content Render (Exact Replica of LmsLearnDashboard student view) */}
+            <div style={{ padding: '1.25rem', border: '1px solid #e2e8f0', borderRadius: 8, backgroundColor: '#fafafa', marginBottom: 20 }}>
+              {previewModal.blob.description && (
+                <p style={{ fontSize: '0.95rem', color: '#475569', marginTop: 0, marginBottom: '1rem', fontStyle: 'italic' }}>
+                  {previewModal.blob.description}
+                </p>
+              )}
+
+              {previewModal.blob.contentHtml && (
+                <div
+                  dangerouslySetInnerHTML={{ __html: previewModal.blob.contentHtml }}
+                  style={{
+                    padding: '1.25rem',
+                    backgroundColor: '#ffffff',
+                    borderRadius: '0.5rem',
+                    border: '1px solid #e2e8f0',
+                    fontSize: '1rem',
+                    lineHeight: 1.6,
+                    marginBottom: '1rem',
+                    color: '#1e293b',
+                  }}
+                />
+              )}
+
+              {(previewModal.blob.azureBlobUrl || previewModal.blob.vimeoId) && (
+                <div style={{ marginBottom: '1rem' }}>
+                  <LmsVideoPlayer
+                    title={previewModal.blob.title}
+                    azureBlobUrl={previewModal.blob.azureBlobUrl}
+                    vimeoId={previewModal.blob.vimeoId}
+                  />
+                </div>
+              )}
+
+              {!previewModal.blob.contentHtml && !previewModal.blob.azureBlobUrl && !previewModal.blob.vimeoId && (
+                <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8', fontStyle: 'italic' }}>
+                  No HTML text or video configured for this content block.
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setPreviewModal({ open: false })}
+                style={{ padding: '8px 20px', backgroundColor: '#2563eb', color: '#ffffff', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}
+              >
+                Close Preview
+              </button>
             </div>
           </div>
         </div>
