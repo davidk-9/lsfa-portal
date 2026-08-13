@@ -47,6 +47,8 @@ function WorkshopProgressModal({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [lmsEnabled, setLmsEnabled] = useState(false);
+  const [learningPlanId, setLearningPlanId] = useState<number | null>(null);
+  const [showAllPlans, setShowAllPlans] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   useEffect(() => {
@@ -55,6 +57,7 @@ function WorkshopProgressModal({
       .then((res) => {
         setData(res.data);
         setLmsEnabled(Boolean(res.data?.lmsEnabled));
+        setLearningPlanId(res.data?.learningPlanId ?? null);
       })
       .catch((err) => {
         console.error('Failed to fetch progress record', err);
@@ -66,7 +69,7 @@ function WorkshopProgressModal({
     setSaving(true);
     setToast(null);
     try {
-      await workshopDetailApi.toggleLmsEnabled(instanceId, lmsEnabled);
+      await workshopDetailApi.toggleLmsEnabled(instanceId, lmsEnabled, learningPlanId);
       setToast({ type: 'success', message: 'LMS settings saved successfully!' });
       setTimeout(() => {
         onClose();
@@ -131,19 +134,59 @@ function WorkshopProgressModal({
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* Editable LMS Setting */}
-            <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: 14 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontWeight: 700, fontSize: 14, color: '#0369a1' }}>
-                <input
-                  type="checkbox"
-                  checked={lmsEnabled}
-                  onChange={(e) => setLmsEnabled(e.target.checked)}
-                  style={{ width: 18, height: 18, cursor: 'pointer' }}
-                />
-                LMS Managed in LSFA Central (lmsEnabled)
-              </label>
-              <p style={{ margin: '6px 0 0 28px', fontSize: 12, color: '#0284c7', lineHeight: 1.4 }}>
-                When enabled, students enrolled in this workshop will complete their online training in LSFA Central. When disabled, students use Axcelerate's native LMS portal.
-              </p>
+            <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontWeight: 700, fontSize: 14, color: '#0369a1' }}>
+                  <input
+                    type="checkbox"
+                    checked={lmsEnabled}
+                    onChange={(e) => setLmsEnabled(e.target.checked)}
+                    style={{ width: 18, height: 18, cursor: 'pointer' }}
+                  />
+                  LMS Managed in LSFA Central (lmsEnabled)
+                </label>
+                <p style={{ margin: '4px 0 0 28px', fontSize: 12, color: '#0284c7', lineHeight: 1.4 }}>
+                  When enabled, students enrolled in this workshop will complete their online training in LSFA Central. When disabled, students use Axcelerate's native LMS portal.
+                </p>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#0369a1', marginBottom: 4 }}>
+                  Assigned LMS Learning Plan:
+                </label>
+                <select
+                  value={learningPlanId ?? ''}
+                  onChange={(e) => setLearningPlanId(e.target.value ? Number(e.target.value) : null)}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    borderRadius: 6,
+                    border: '1px solid #93c5fd',
+                    fontSize: 13,
+                    color: '#0f172a',
+                    background: '#ffffff',
+                  }}
+                >
+                  <option value="">-- No Learning Plan Assigned --</option>
+                  {((showAllPlans ? data?.allPlans : data?.availablePlans) || []).map((plan: any) => (
+                    <option key={plan.id} value={plan.id}>
+                      {plan.courseCode?.code || 'Unit'} &bull; {plan.title || 'Plan'} ({plan.version}) [{plan.status || 'DRAFT'}]
+                    </option>
+                  ))}
+                </select>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                  <span style={{ fontSize: 11, color: '#0369a1' }}>
+                    {showAllPlans ? 'Showing all plans across all units' : `Filtered for unit: ${data?.resolvedCourseCode || 'workshop'}`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowAllPlans(!showAllPlans)}
+                    style={{ background: 'none', border: 'none', color: '#0284c7', fontSize: 11, fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
+                  >
+                    {showAllPlans ? 'Filter by Workshop Unit' : 'Show All Units'}
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Read-Only Record Fields */}

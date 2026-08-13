@@ -356,7 +356,7 @@ export class ContactsService {
     const contact = await this.prisma.contact.findUnique({ where: { id: contactId } });
     if (!contact) throw new NotFoundException(`Contact with ID ${contactId} not found`);
 
-    return this.prisma.lmsEnrollment.findMany({
+    const enrolments = await this.prisma.lmsEnrollment.findMany({
       where: { contactId },
       include: {
         learningPlan: {
@@ -367,6 +367,46 @@ export class ContactsService {
         workshopProgress: true,
       },
       orderBy: { enrolledAt: 'desc' },
+    });
+
+    const allPlans = await this.prisma.learningPlan.findMany({
+      include: {
+        courseCode: true,
+      },
+      orderBy: { id: 'desc' },
+    });
+
+    return {
+      enrolments,
+      allPlans,
+    };
+  }
+
+  async updateEnrolment(enrolmentId: string, updateData: any) {
+    const enrolment = await this.prisma.lmsEnrollment.findUnique({ where: { id: enrolmentId } });
+    if (!enrolment) throw new NotFoundException(`Enrolment with ID ${enrolmentId} not found`);
+
+    const planId = 'learningPlanId' in updateData
+      ? (updateData.learningPlanId ? Number(updateData.learningPlanId) : null)
+      : enrolment.learningPlanId;
+
+    return this.prisma.lmsEnrollment.update({
+      where: { id: enrolmentId },
+      data: {
+        learningPlanId: planId,
+        ...('learningMode' in updateData ? { learningMode: Number(updateData.learningMode) } : {}),
+        ...('isCompetent' in updateData ? { isCompetent: Boolean(updateData.isCompetent) } : {}),
+        ...('axStatus' in updateData ? { axStatus: updateData.axStatus } : {}),
+        ...('isActive' in updateData ? { isActive: Boolean(updateData.isActive) } : {}),
+      },
+      include: {
+        learningPlan: {
+          include: {
+            courseCode: true,
+          },
+        },
+        workshopProgress: true,
+      },
     });
   }
 

@@ -15,7 +15,7 @@ interface ContentBlock {
   azureBlobUrl?: string | null;
   durationSeconds: number;
   status: 'unread' | 'viewed' | 'competent' | 'needs_review';
-  knowledgeEvidence?: { id: string; code: string; title: string };
+  knowledgeEvidences?: Array<{ id: string; code: string; title: string }>;
 }
 
 interface Chapter {
@@ -363,11 +363,11 @@ export function LmsLearnDashboard() {
                             <span style={{ fontSize: '1.125rem', fontWeight: 600, color: '#1e293b' }}>
                               📦 {b.title}
                             </span>
-                            {b.knowledgeEvidence && (
-                              <span style={{ padding: '2px 8px', backgroundColor: '#eff6ff', color: '#1e40af', borderRadius: 4, fontSize: '0.75rem', fontWeight: 600 }}>
-                                KE: {b.knowledgeEvidence.code}
+                            {b.knowledgeEvidences && b.knowledgeEvidences.length > 0 && b.knowledgeEvidences.map((k) => (
+                              <span key={k.id} style={{ padding: '2px 8px', backgroundColor: '#eff6ff', color: '#1e40af', borderRadius: 4, fontSize: '0.75rem', fontWeight: 600 }}>
+                                KE: {k.code}
                               </span>
-                            )}
+                            ))}
                           </div>
 
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>

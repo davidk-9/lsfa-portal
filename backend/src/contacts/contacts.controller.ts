@@ -77,6 +77,14 @@ export class ContactsController {
 
   @UseGuards(RolesGuard)
   @Roles('SUPER_USER', 'ADMIN')
+  @Patch('enrolments/:enrolmentId')
+  updateEnrolment(@Request() req, @Body() body: any) {
+    const enrolmentId = req.params.enrolmentId;
+    return this.contactsService.updateEnrolment(enrolmentId, body);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles('SUPER_USER', 'ADMIN')
   @Get(':id')
   getContactById(@Request() req) {
     const id = parseInt(req.params.id, 10);

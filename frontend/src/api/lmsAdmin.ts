@@ -11,17 +11,18 @@ export interface KnowledgeEvidence {
 
 export interface Chapter {
   id: string;
-  courseCodeId: number;
+  courseCodeId?: number | null;
   title: string;
   description?: string;
   sortOrder: number;
+  courseCode?: { id: number; code: string; name: string };
   blobs?: LearningBlob[];
 }
 
 export interface LearningBlob {
   id: string;
   chapterId?: string | null;
-  knowledgeEvidenceId?: string | null;
+  knowledgeEvidenceIds?: string[];
   title: string;
   description?: string;
   contentHtml?: string;
@@ -29,7 +30,7 @@ export interface LearningBlob {
   azureBlobUrl?: string | null;
   durationSeconds: number;
   sortOrder: number;
-  knowledgeEvidence?: { id: string; code: string; title: string };
+  knowledgeEvidences?: Array<{ id: string; code: string; title: string }>;
 }
 
 export interface QuestionBankItem {
@@ -40,10 +41,12 @@ export interface QuestionBankItem {
   correctAnswer?: any;
   benchmarkAnswer?: string;
   points: number;
-  knowledgeEvidenceId?: string | null;
+  knowledgeEvidenceIds?: string[];
   coreLearningBlobId?: string | null;
-  knowledgeEvidence?: { id: string; code: string; title: string };
+  knowledgeEvidences?: Array<{ id: string; code: string; title: string }>;
   coreLearningBlob?: { id: string; title: string };
+  isLocked?: boolean;
+  publishedPlans?: string[];
 }
 
 export interface LearningPlan {
@@ -56,6 +59,11 @@ export interface LearningPlan {
   isDefault: boolean;
   effectiveFrom?: string;
   courseCode?: { id: number; code: string; name: string };
+  planChapters?: Array<{
+    chapterId: string;
+    sortOrder: number;
+    chapter: Chapter;
+  }>;
   planQuestions?: Array<{
     questionId: string;
     sortOrder: number;
@@ -75,8 +83,8 @@ export const lmsAdminApi = {
   deleteKE: (id: string) => api.delete(`/lms-admin/ke/${id}`),
 
   // Chapters & Blobs
-  getChapters: (courseCodeId: number) => api.get<Chapter[]>(`/lms-admin/chapters?courseCodeId=${courseCodeId}`),
-  createChapter: (data: { courseCodeId: number; title: string; description?: string; sortOrder?: number }) =>
+  getChapters: (courseCodeId?: number) => api.get<Chapter[]>(`/lms-admin/chapters${courseCodeId ? `?courseCodeId=${courseCodeId}` : ''}`),
+  createChapter: (data: { courseCodeId?: number; title: string; description?: string; sortOrder?: number }) =>
     api.post<Chapter>('/lms-admin/chapters', data),
   updateChapter: (id: string, data: { title?: string; description?: string; sortOrder?: number }) =>
     api.put<Chapter>(`/lms-admin/chapters/${id}`, data),
@@ -84,7 +92,7 @@ export const lmsAdminApi = {
 
   createBlob: (data: {
     chapterId?: string;
-    knowledgeEvidenceId?: string;
+    knowledgeEvidenceIds?: string[];
     title: string;
     description?: string;
     contentHtml?: string;
@@ -97,7 +105,7 @@ export const lmsAdminApi = {
     id: string,
     data: {
       chapterId?: string;
-      knowledgeEvidenceId?: string;
+      knowledgeEvidenceIds?: string[];
       title?: string;
       description?: string;
       contentHtml?: string;
@@ -118,7 +126,7 @@ export const lmsAdminApi = {
     correctAnswer?: any;
     benchmarkAnswer?: string;
     points?: number;
-    knowledgeEvidenceId?: string;
+    knowledgeEvidenceIds?: string[];
     coreLearningBlobId?: string;
   }) => api.post<QuestionBankItem>('/lms-admin/questions', data),
   updateQuestion: (
@@ -130,7 +138,7 @@ export const lmsAdminApi = {
       correctAnswer?: any;
       benchmarkAnswer?: string;
       points?: number;
-      knowledgeEvidenceId?: string;
+      knowledgeEvidenceIds?: string[];
       coreLearningBlobId?: string;
     },
   ) => api.put<QuestionBankItem>(`/lms-admin/questions/${id}`, data),
@@ -138,12 +146,18 @@ export const lmsAdminApi = {
 
   // Learning Plans
   getPlans: (courseCodeId?: number) => api.get<LearningPlan[]>(`/lms-admin/plans${courseCodeId ? `?courseCodeId=${courseCodeId}` : ''}`),
-  createPlan: (data: { courseCodeId: number; version: string; title: string; description?: string; isDefault?: boolean }) =>
+  createPlan: (data: { courseCodeId: number; version: string; title: string; description?: string; isDefault?: boolean; status?: string }) =>
     api.post<LearningPlan>('/lms-admin/plans', data),
   updatePlan: (id: number, data: { title?: string; description?: string; status?: string; isDefault?: boolean }) =>
     api.put<LearningPlan>(`/lms-admin/plans/${id}`, data),
+  clonePlanToDraft: (id: number, incrementType: 'minor' | 'major') =>
+    api.post<LearningPlan>(`/lms-admin/plans/${id}/clone-draft`, { incrementType }),
   setPlanQuestions: (
     planId: number,
     items: Array<{ questionId: string; sortOrder: number; points?: number }>,
   ) => api.post<LearningPlan>(`/lms-admin/plans/${planId}/questions`, { items }),
+  setPlanChapters: (
+    planId: number,
+    items: Array<{ chapterId: string; sortOrder: number }>,
+  ) => api.post<LearningPlan>(`/lms-admin/plans/${planId}/chapters`, { items }),
 };

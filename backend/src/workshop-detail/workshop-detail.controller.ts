@@ -83,8 +83,9 @@ export class WorkshopDetailController {
   toggleLmsEnabled(
     @Body('instanceId', ParseIntPipe) instanceId: number,
     @Body('lmsEnabled') lmsEnabled: boolean,
+    @Body('learningPlanId') learningPlanId?: number | null,
   ) {
-    return this.service.toggleLmsEnabled(instanceId, lmsEnabled);
+    return this.service.toggleLmsEnabled(instanceId, lmsEnabled, learningPlanId);
   }
 
   @Get('task-structure')

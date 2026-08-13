@@ -51,13 +51,14 @@ export class LmsAdminController {
   // ── Chapters & Content Blocks (Blobs) ────────────────────────────────────────
 
   @Get('chapters')
-  async getChaptersByCourseCode(@Query('courseCodeId', ParseIntPipe) courseCodeId: number) {
-    return this.lmsAdminService.getChaptersByCourseCode(courseCodeId);
+  async getChapters(@Query('courseCodeId') courseCodeId?: string) {
+    const cId = courseCodeId ? parseInt(courseCodeId, 10) : undefined;
+    return this.lmsAdminService.getChaptersByCourseCode(cId);
   }
 
   @Post('chapters')
   async createChapter(
-    @Body() dto: { courseCodeId: number; title: string; description?: string; sortOrder?: number },
+    @Body() dto: { courseCodeId?: number; title: string; description?: string; sortOrder?: number },
   ) {
     return this.lmsAdminService.createChapter(dto);
   }
@@ -80,7 +81,7 @@ export class LmsAdminController {
     @Body()
     dto: {
       chapterId?: string;
-      knowledgeEvidenceId?: string;
+      knowledgeEvidenceIds?: string[];
       title: string;
       description?: string;
       contentHtml?: string;
@@ -99,7 +100,7 @@ export class LmsAdminController {
     @Body()
     dto: {
       chapterId?: string;
-      knowledgeEvidenceId?: string;
+      knowledgeEvidenceIds?: string[];
       title?: string;
       description?: string;
       contentHtml?: string;
@@ -134,7 +135,7 @@ export class LmsAdminController {
       correctAnswer?: any;
       benchmarkAnswer?: string;
       points?: number;
-      knowledgeEvidenceId?: string;
+      knowledgeEvidenceIds?: string[];
       coreLearningBlobId?: string;
     },
   ) {
@@ -152,7 +153,7 @@ export class LmsAdminController {
       correctAnswer?: any;
       benchmarkAnswer?: string;
       points?: number;
-      knowledgeEvidenceId?: string;
+      knowledgeEvidenceIds?: string[];
       coreLearningBlobId?: string;
     },
   ) {
@@ -181,6 +182,7 @@ export class LmsAdminController {
       title: string;
       description?: string;
       isDefault?: boolean;
+      status?: string;
     },
   ) {
     return this.lmsAdminService.createLearningPlan(dto);
@@ -200,6 +202,14 @@ export class LmsAdminController {
     return this.lmsAdminService.updateLearningPlan(id, dto);
   }
 
+  @Post('plans/:id/clone-draft')
+  async clonePlanToDraft(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('incrementType') incrementType: 'minor' | 'major',
+  ) {
+    return this.lmsAdminService.clonePlanToDraft(id, incrementType || 'minor');
+  }
+
   @Post('plans/:id/questions')
   async setPlanQuestions(
     @Param('id', ParseIntPipe) id: number,
@@ -209,5 +219,16 @@ export class LmsAdminController {
     },
   ) {
     return this.lmsAdminService.setPlanQuestions(id, dto.items);
+  }
+
+  @Post('plans/:id/chapters')
+  async setPlanChapters(
+    @Param('id', ParseIntPipe) id: number,
+    @Body()
+    dto: {
+      items: Array<{ chapterId: string; sortOrder: number }>;
+    },
+  ) {
+    return this.lmsAdminService.setPlanChapters(id, dto.items);
   }
 }

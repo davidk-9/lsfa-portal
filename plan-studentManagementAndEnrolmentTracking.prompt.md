@@ -1,99 +1,67 @@
-# Student Management Redesign, Enrolment Tracking & LMS Integration Plan
+# LMS & Student Management Integration Plan - Next Tranche
 
-## Overview
-Refactor Contact Management into Student Management, fix non-Axcelerate sync bugs and dummy ID ranges for test/local accounts (like John Doe), add an admin onboarding guard bypass, build a Student Summary Page with collapsible details and enrolment history, and set up webhook-driven enrolment sync for LSFA Central workshops.
+## Tranche Plan & Backlog
 
-## Research Findings & Answers
+### Item 1: Learning Plan Assignment Selector in Admin Calendar Modal
+1. **Admin Calendar Workshop Progress Modal (`WorkshopProgressModal`)**:
+   - Add a dropdown selector allowing admins to assign/change the `LearningPlan` (`learningPlanId`) on a `WorkshopProgress` record.
+   - Populate the selector with available published/active `LearningPlan` versions matching that workshop's course code.
+   - Saving updates both `lmsEnabled` and `learningPlanId` on `WorkshopProgress` in LSFA Central.
 
-### 1. Axcelerate LMS vs. LSFA Central LMS Determination
-- **Flag**: `WorkshopProgress.lmsEnabled` (Boolean, default `false`).
-- **Logic**:
-  - `lmsEnabled = true`: Workshop LMS journey is managed in LSFA Central.
-  - `lmsEnabled = false` (or no `WorkshopProgress` record): Workshop uses Axcelerate's native LMS portal.
+### Item 2: Student Enrolment Detail Modal & Learning Plan Selector
+1. **Student Summary Page Course Enrolments Table (`frontend/src/pages/ContactDetailsPage.tsx`)**:
+   - Add an action button/link (e.g. `[...]`) on each row of the student's Course Enrolments table.
+   - Clicking this action opens an **Enrolment Details Modal** displaying all fields of that `LmsEnrollment` record (Enrolment ID, Student Contact ID, Workshop Instance ID, Course Code, Axcelerate Status, Enrolled Date, Completion Date, Mode, Score, Competency Status, and assigned Learning Plan).
+   - In this modal, allow admins to assign or update the `LearningPlan` (`learningPlanId`) directly on the `LmsEnrollment` record via a dropdown selector:
+     - If the enrolment is attached to a workshop instance, filter available published/active `LearningPlan`s by that workshop's course code.
+     - If no workshop instance is attached, list all published/active `LearningPlan`s across all course codes.
+   - Saving updates the `LmsEnrollment` record in the database.
 
-### 2. Enrolments vs. Workshop Progress Relationships
-- In `schema.prisma`, `LmsEnrollment` connects:
-  - `Contact` (`contactId`)
-  - `LearningPlan` (`learningPlanId`)
-  - `WorkshopProgress` (`instanceId` — Axcelerate workshop instance ID)
+### Item 3: Knowledge Evidence (KE) Multi-Course Code & Multi-KE Mapping (COMPLETED)
+1. **KE Multi-Course Code Linkage**:
+   - Updated KE editor modal (`LmsAdminPage.tsx`) to allow multi-select checkbox mapping across all Course Codes (`HLTAID009`, `HLTAID011`, etc.).
+   - Supported many-to-many relationship between `LmsKnowledgeEvidence` and `CourseCode`.
+2. **Multi-KE Mapping for Blobs & Questions**:
+   - Updated database schema, backend DTOs, and controllers (`lms-admin.service.ts`, `lms-admin.controller.ts`) so Content Blobs (`LmsLearningBlob`) and Questions (`LmsQuestion`) link to multiple KEs (`knowledgeEvidences LmsKnowledgeEvidence[]`).
+   - Updated UI modals to support multi-checkbox KE selection and display KE badges in list views.
 
-### 3. Non-Axcelerate User Sync Issue (John Doe)
-- Test/local contacts (e.g. dummy local contacts starting at `900000000` or John Doe seeded as `9999901`) do not exist in Axcelerate.
-- John Doe's current seeded ID (`9999901`) was less than `900000000`, causing boundary checks to miss it.
-- We need to fix the boundary checks AND update John Doe's dummy contact ID to the `>= 900000000` range via seed script / DB update.
+### Item 4: Decouple Chapters/Blobs & Link to Learning Plan Master Container (COMPLETED)
+1. **Decoupled Chapters**:
+   - Made `courseCodeId` optional (`Int?`) on `LmsChapter` so Chapters and Learning Blobs can exist independently or be reused across units.
+2. **Learning Plan Master Container Integration**:
+   - Created `LearningPlanChapter` join table in database schema and updated `lms-admin.service.ts` & `lms-admin.controller.ts` with `setPlanChapters()`.
+   - Updated `LearningPlan` to act as the master container that holds ordered **Chapters/Blobs** and **Questions**.
+   - Updated LMS Admin UI modal (`LmsAdminPage.tsx`) so admins select and order Chapters/Blobs directly when creating or editing a Learning Plan Version.
+   - Updated `lms.service.ts` (`getEnrollmentContent`) so enrolled students load the exact ordered chapters assigned to their learning plan.
 
----
+### Item 5: Question Bank Specialized Editors (Types 1-7) & Question Versioning (COMPLETED)
+1. **Type-Specific Visual Question Editors (`LmsAdminPage.tsx`)**:
+   - **Type 1 (Multiple Choice Single)**: Dynamic option rows + radio button picker for correct answer.
+   - **Type 2 (Multiple Choice Multiple)**: Dynamic option rows + checkbox pickers for correct answers.
+   - **Type 3 (Sequence / Ordering)**: Dynamic item list + ▲ Up / ▼ Down buttons to re-order into target correct sequence.
+   - **Type 4 (Term & Definition Matching)**: Two-column builder pairing Term & Definition inputs.
+   - **Type 5 (Fill in Blanks)**: Interactive sentence template editor + visual Blank Configurator for `{0}`, `{1}`, etc., with dropdown choices and correct answer selector.
+   - **Type 6 (Short Answer / AI Vector)**: Question prompt, minimum word count, required evaluation keywords, and AI Benchmark Model Answer.
+   - **Type 7 (Observation Checklist / Form Assessment)**: Form field builder defining field labels, field keys, input types (`text`, `textarea`, `date`, `checkbox`), and required flags.
+2. **Multi-KE Tagging**:
+   - Integrated multi-select KE checkboxes across all 7 question types.
+3. **Question Versioning & Assessment Protection**:
+   - `lms-admin.service.ts` tracks if a question is assigned to `PUBLISHED` Learning Plans.
+   - Questions on published plans show a `🔒 Locked (Published)` badge in the Question Bank table.
+   - Editing a locked question automatically creates a new version/duplicate of the question in the database, updates draft plans, and leaves the original question untouched to preserve historical student assessment responses.
 
-## Detailed Execution Plan
+### Item 6: Learning Plan Versioning Controls & Draft/Published Lock (COMPLETED)
+1. **Version Control UI & Backend (`LmsAdminPage.tsx` & `lms-admin.service.ts`)**:
+   - Implemented `POST /lms-admin/plans/:id/clone-draft` with explicit versioning increments:
+     - **Minor Version Increment** (e.g. `v1.0` -> `v1.1`): For typo fixes or adding supporting reading material.
+     - **Major Version Increment** (e.g. `v1.0` -> `v2.0`): For structural curriculum or assessment changes.
+   - Automatically clones all assigned Chapters, Blobs, and Questions into the new Draft version.
+2. **Draft vs. Published Workflow & Read-Only Lock**:
+   - Added interactive status pills (`✓ PUBLISHED` / `📝 DRAFT`) allowing admins to toggle publication status.
+   - **Published Plans**: Locked as read-only in both frontend and backend to guarantee student assessment integrity.
+   - Attempting to update a published plan returns a clear error message advising the admin to use `+ Minor Draft` or `+ Major Draft`.
+3. **Smart Builder Filtering**:
+   - Selecting Course Codes automatically filters available KEs, Chapters, and Questions for fast plan construction.
 
-### Phase 1: Fix Axcelerate Sync Guards & Dummy Contact IDs for Local/Test Accounts
-1. **Dummy Contact ID Seed & DB Fix**:
-   - Update `lms.service.ts` seed logic so John Doe's contact ID is created in the `>= 900000000` range (e.g. `900009991`).
-   - Run a DB update or seed script to update any existing test contacts with ID `9999901` to `>= 900000000`.
-2. **Magic Link Sync (`backend/src/users/users.service.ts`)**:
-   - Update `generateMagicLink` to check `axContactId > 0 && axContactId < 900000000` before invoking `this.axcelerate.updateContact`.
-3. **Contact Lookup & Updates (`backend/src/contacts/contacts.service.ts`)**:
-   - In `getContactForUser`, skip Axcelerate email lookup for non-Axcelerate/dummy emails.
-   - Guard `updateContactById` and `updateContactForUser` to strictly enforce `axId < 900000000`.
-4. **Upload Evidence Sync (`backend/src/uploads/uploads.controller.ts`)**:
-   - Guard `putEnrolmentCustomField` and `putEnrolmentChecklistUrl` with `contactId > 0 && contactId < 900000000`.
 
-### Phase 2: Student Onboarding Guard Bypass
-1. **Prisma Schema (`backend/prisma/schema.prisma`)**:
-   - Add `bypassOnboarding Boolean @default(false)` to the `Contact` model and generate/run migration.
-2. **Backend Service (`backend/src/contacts/contacts.service.ts`)**:
-   - Return `bypassOnboarding` in contact queries and accept it in update DTOs.
-3. **Frontend Guard (`frontend/src/components/StudentOnboardingGuard.tsx`)**:
-   - If `contactData.bypassOnboarding === true`, set `step = 'complete'` immediately to allow testing.
-4. **Admin UI Toggle**:
-   - Add an admin toggle switch for **Bypass Onboarding Guard** on the Student Summary Page.
 
-### Phase 3: Frontend Navigation & Student Management Redesign
-1. **Sidebar Navigation (`frontend/src/components/AppLayout.tsx`)**:
-   - Rename menu link from **Contact Management** to **Student Management**.
-2. **Student List Page (`frontend/src/pages/ContactsPage.tsx`)**:
-   - Rename page heading to **Student Management**.
-   - Change action button text from **Edit Profile** to **Edit Details**.
-   - Make student's **Full Name** a clickable link navigating to `/contacts/:id` (Student Summary Page).
-3. **Student Summary Page (`frontend/src/pages/ContactDetailsPage.tsx`)**:
-   - Implement a two-panel layout:
-     - **Left Panel (Read-Only Student Profile Summary)**:
-       - Header: Full Name, Email, Mobile, USI, Linked Account status, **Edit Details** button, and **Bypass Onboarding Guard** toggle.
-       - Top section: Main contact details always visible.
-       - Accordion 1 (collapsible, collapsed by default): **AVETMISS Data**.
-       - Accordion 2 (collapsible, collapsed by default): **Declarations**.
-     - **Right Panel (Enrolment History Table)**:
-       - Table listing all `LmsEnrollment` records sorted from newest to oldest (`enrolledAt` descending).
-       - Columns: Course / Learning Plan, Mode, Enrolled Date, Completion Date, Score / Competency Status, Linked Workshop Instance.
-
-### Phase 4: Dashboard Learning Cards & Enrolments Refactor
-1. **Unified Enrolments Tracking**:
-   - Support enrolments for both **LSFA Central LMS** (with learning plan & mode) and **Axcelerate LMS** (tracking student `contactId`, workshop `instanceId`, and `courseCode` without requiring LSFA learning plan/mode).
-   - Ensure backend endpoint `GET /contacts/me/enrolments` returns all active enrolments for the logged-in student.
-2. **Dynamic Dashboard Cards (`frontend/src/pages/DashboardPage.tsx`)**:
-   - Fetch logged-in student's enrolments upon dashboard mount.
-   - **No enrolments**: Display the default Axcelerate Online Learning Card linking to `https://lifesavingfirstaid.app.axcelerate.com/learner`.
-   - **Has enrolments**: Render a dedicated card for each enrolment:
-     - **LSFA LMS Enrolment (`lmsEnabled = true`)**: Show course name/code, progress, and button linking into LSFA Central LMS (`/lms/start/:enrollmentId` or `/lms`).
-     - **Axcelerate LMS Enrolment (`lmsEnabled = false`)**: Show course code & workshop instance info, with button linking to Axcelerate Learner Portal.
-
-### Phase 5: Webhook Listener Integration for Enrolments (Pending User Research / Details)
-1. **Axcelerate Webhook Listener Integration (`backend/src/axcelerate/webhooks.controller.ts`)**:
-   - Add listeners for student workshop booking / enrolment webhooks using payload details provided by user.
-   - If the workshop instance has `lmsEnabled = true`, auto-create/link an `LmsEnrollment` record for LSFA Central LMS.
-   - If `lmsEnabled = false`, create an enrolment record tracking student `contactId`, `instanceId`, and `courseCode` for Axcelerate LMS dashboard card rendering.
-
----
-
-## Verification Plan
-
-### Automated & Manual Verification
-1. **Axcelerate Sync Test**:
-   - Trigger contact update or magic link generation for John Doe (now re-seeded with dummy ID `>= 900000000`).
-   - Verify backend logs confirm Axcelerate push is skipped without throwing errors.
-2. **Onboarding Guard Bypass Test**:
-   - Toggle **Bypass Onboarding Guard** on a student contact.
-   - Log in as student role user and verify immediate access past onboarding guard.
-3. **Student Summary & Enrolments View**:
-   - Navigate to `/contacts`, verify titles/menus say **Student Management**.
-   - Click student name, verify summary view with accordion sections and enrolment table sorted newest to oldest.

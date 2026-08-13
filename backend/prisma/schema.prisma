@@ -372,6 +372,7 @@ model LearningPlan {
   updatedAt        DateTime               @updatedAt
   courseCode       CourseCode             @relation(fields: [courseCodeId], references: [id], onDelete: Cascade)
   planQuestions    LearningPlanQuestion[]
+  planChapters     LearningPlanChapter[]
   workshopProgress WorkshopProgress[]
   lmsEnrollments   LmsEnrollment[]
 
@@ -394,15 +395,16 @@ model LmsKnowledgeEvidence {
 }
 
 model LmsChapter {
-  id           String            @id @default(uuid())
-  courseCodeId Int
+  id           String                @id @default(uuid())
+  courseCodeId Int?
   title        String
   description  String?
-  sortOrder    Int               @default(0)
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
-  courseCode   CourseCode        @relation(fields: [courseCodeId], references: [id], onDelete: Cascade)
+  sortOrder    Int                   @default(0)
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  courseCode   CourseCode?           @relation(fields: [courseCodeId], references: [id], onDelete: SetNull)
   blobs        LmsLearningBlob[]
+  planChapters LearningPlanChapter[]
 
   @@index([courseCodeId, sortOrder])
 }
@@ -417,22 +419,19 @@ model LmsQuestion {
   points                Int                    @default(1)
   coreLearningBlobId    String?
   supportLearningBlobId String?
-  knowledgeEvidenceId   String?
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
   coreLearningBlob      LmsLearningBlob?       @relation("CoreBlobQuestions", fields: [coreLearningBlobId], references: [id], onDelete: SetNull)
   supportLearningBlob   LmsLearningBlob?       @relation("SupportBlobQuestions", fields: [supportLearningBlobId], references: [id], onDelete: SetNull)
-  knowledgeEvidence     LmsKnowledgeEvidence? @relation(fields: [knowledgeEvidenceId], references: [id], onDelete: SetNull)
+  knowledgeEvidences    LmsKnowledgeEvidence[]
   planQuestions         LearningPlanQuestion[]
 
   @@index([type])
-  @@index([knowledgeEvidenceId])
 }
 
 model LmsLearningBlob {
   id                  String                @id @default(uuid())
   chapterId           String?
-  knowledgeEvidenceId String?
   title               String
   description         String?
   contentHtml         String?
@@ -443,12 +442,11 @@ model LmsLearningBlob {
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
   chapter             LmsChapter?           @relation(fields: [chapterId], references: [id], onDelete: SetNull)
-  knowledgeEvidence   LmsKnowledgeEvidence? @relation(fields: [knowledgeEvidenceId], references: [id], onDelete: SetNull)
+  knowledgeEvidences  LmsKnowledgeEvidence[]
   coreQuestions       LmsQuestion[]         @relation("CoreBlobQuestions")
   supportQuestions    LmsQuestion[]         @relation("SupportBlobQuestions")
 
   @@index([chapterId, sortOrder])
-  @@index([knowledgeEvidenceId])
 }
 
 model LearningPlanQuestion {
@@ -461,6 +459,18 @@ model LearningPlanQuestion {
   question       LmsQuestion  @relation(fields: [questionId], references: [id], onDelete: Cascade)
 
   @@id([learningPlanId, questionId])
+  @@index([learningPlanId, sortOrder])
+}
+
+model LearningPlanChapter {
+  learningPlanId Int
+  chapterId      String
+  sortOrder      Int          @default(0)
+  addedAt        DateTime     @default(now())
+  learningPlan   LearningPlan @relation(fields: [learningPlanId], references: [id], onDelete: Cascade)
+  chapter        LmsChapter   @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
+  @@id([learningPlanId, chapterId])
   @@index([learningPlanId, sortOrder])
 }
 

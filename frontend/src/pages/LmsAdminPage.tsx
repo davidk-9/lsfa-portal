@@ -35,7 +35,7 @@ export function LmsAdminPage() {
   const [blobModal, setBlobModal] = useState<{ open: boolean; chapterId?: string; item?: LearningBlob | null }>({ open: false });
   const [blobForm, setBlobForm] = useState<{
     chapterId: string;
-    knowledgeEvidenceId: string;
+    knowledgeEvidenceIds: string[];
     title: string;
     description: string;
     contentHtml: string;
@@ -45,7 +45,7 @@ export function LmsAdminPage() {
     sortOrder: number;
   }>({
     chapterId: '',
-    knowledgeEvidenceId: '',
+    knowledgeEvidenceIds: [],
     title: '',
     description: '',
     contentHtml: '',
@@ -61,29 +61,65 @@ export function LmsAdminPage() {
     questionText: string;
     benchmarkAnswer: string;
     points: number;
-    knowledgeEvidenceId: string;
+    knowledgeEvidenceIds: string[];
     coreLearningBlobId: string;
-    // Fill in blanks builder fields
-    template: string;
-    blanksJson: string; // JSON string of blanks with distractors
-    // Multiple choice builder
-    optionsText: string; // comma separated
-    correctOption: string;
+
+    // Type 1 & 2: Multiple Choice
+    mcOptions: string[];
+    mcSingleCorrect: string;
+    mcMultipleCorrect: string[];
+
+    // Type 3: Order Items
+    orderItems: string[];
+
+    // Type 4: Match Definitions
+    matchPairs: Array<{ term: string; definition: string }>;
+
+    // Type 5: Fill in Blanks
+    blankTemplate: string;
+    blanksList: Array<{ index: number; hint: string; options: string[]; correctAnswer: string }>;
+
+    // Type 6: Free Text
+    freeTextMinWords: number;
+    freeTextKeywords: string;
+
+    // Type 7: Forms
+    formFields: Array<{ name: string; label: string; type: string; required: boolean }>;
   }>({
     type: QuestionType.MultipleChoiceSingle,
     questionText: '',
     benchmarkAnswer: '',
     points: 1,
-    knowledgeEvidenceId: '',
+    knowledgeEvidenceIds: [],
     coreLearningBlobId: '',
-    template: 'During CPR, perform {0} compressions at a depth of {1}, followed by {2} rescue breaths.',
-    blanksJson: JSON.stringify([
-      { index: 0, hint: 'compressions', options: ['15', '30', '50'] },
-      { index: 1, hint: 'depth', options: ['2 cm', '5-6 cm', '10 cm'] },
-      { index: 2, hint: 'rescue breaths', options: ['1', '2', '5'] },
-    ], null, 2),
-    optionsText: 'Option A, Option B, Option C, Option D',
-    correctOption: 'Option B',
+
+    mcOptions: ['Option A', 'Option B', 'Option C', 'Option D'],
+    mcSingleCorrect: 'Option A',
+    mcMultipleCorrect: ['Option A'],
+
+    orderItems: ['Step 1: Danger & Response', 'Step 2: Airway & Breathing', 'Step 3: CPR & Defibrillation'],
+
+    matchPairs: [
+      { term: 'CPR', definition: 'Cardiopulmonary resuscitation to restore breathing and circulation' },
+      { term: 'AED', definition: 'Automated External Defibrillator used to reset heart rhythm' },
+      { term: 'Recovery Position', definition: 'Side-lying position to maintain an open airway' },
+    ],
+
+    blankTemplate: 'During CPR, perform {0} compressions at a depth of {1}, followed by {2} rescue breaths.',
+    blanksList: [
+      { index: 0, hint: 'compressions', options: ['30', '15', '50'], correctAnswer: '30' },
+      { index: 1, hint: 'depth', options: ['5-6 cm', '2 cm', '10 cm'], correctAnswer: '5-6 cm' },
+      { index: 2, hint: 'rescue breaths', options: ['2', '1', '5'], correctAnswer: '2' },
+    ],
+
+    freeTextMinWords: 30,
+    freeTextKeywords: 'danger, response, airway, breathing, CPR, defibrillator',
+
+    formFields: [
+      { name: 'incidentDate', label: 'Date of Incident', type: 'date', required: true },
+      { name: 'location', label: 'Location', type: 'text', required: true },
+      { name: 'description', label: 'Incident Description', type: 'textarea', required: true },
+    ],
   });
 
   const [planModal, setPlanModal] = useState<{ open: boolean; item?: LearningPlan | null }>({ open: false });
@@ -93,6 +129,7 @@ export function LmsAdminPage() {
     title: string;
     description: string;
     isDefault: boolean;
+    selectedChapterIds: string[];
     selectedQuestionIds: string[];
   }>({
     courseCodeId: 0,
@@ -100,6 +137,7 @@ export function LmsAdminPage() {
     title: '',
     description: '',
     isDefault: true,
+    selectedChapterIds: [],
     selectedQuestionIds: [],
   });
 
@@ -116,6 +154,8 @@ export function LmsAdminPage() {
       if (codes.length > 0) {
         setSelectedCourseCodeId(codes[0].id);
         loadChapters(codes[0].id);
+      } else {
+        loadChapters();
       }
 
       await Promise.all([loadKEs(), loadQuestions(), loadPlans()]);
@@ -131,8 +171,8 @@ export function LmsAdminPage() {
     setKes(res.data || []);
   };
 
-  const loadChapters = async (courseCodeId: number) => {
-    const res = await lmsAdminApi.getChapters(courseCodeId);
+  const loadChapters = async (courseCodeId?: number) => {
+    const res = await lmsAdminApi.getChapters(courseCodeId && courseCodeId > 0 ? courseCodeId : undefined);
     setChapters(res.data || []);
   };
 
@@ -199,15 +239,17 @@ export function LmsAdminPage() {
   };
 
   const handleSaveChapter = async () => {
-    if (!selectedCourseCodeId) return;
     try {
       if (chapterModal.item) {
         await lmsAdminApi.updateChapter(chapterModal.item.id, chapterForm);
       } else {
-        await lmsAdminApi.createChapter({ ...chapterForm, courseCodeId: selectedCourseCodeId });
+        await lmsAdminApi.createChapter({
+          ...chapterForm,
+          courseCodeId: selectedCourseCodeId && selectedCourseCodeId > 0 ? selectedCourseCodeId : undefined,
+        });
       }
       setChapterModal({ open: false });
-      await loadChapters(selectedCourseCodeId);
+      await loadChapters(selectedCourseCodeId || undefined);
     } catch (err: any) {
       alert(`Error saving Chapter: ${err.message}`);
     }
@@ -228,7 +270,7 @@ export function LmsAdminPage() {
     if (blob) {
       setBlobForm({
         chapterId,
-        knowledgeEvidenceId: blob.knowledgeEvidenceId || '',
+        knowledgeEvidenceIds: blob.knowledgeEvidences?.map((k) => k.id) || [],
         title: blob.title,
         description: blob.description || '',
         contentHtml: blob.contentHtml || '',
@@ -241,7 +283,7 @@ export function LmsAdminPage() {
     } else {
       setBlobForm({
         chapterId,
-        knowledgeEvidenceId: '',
+        knowledgeEvidenceIds: [],
         title: '',
         description: '',
         contentHtml: '',
@@ -281,17 +323,62 @@ export function LmsAdminPage() {
   // ── Question Actions ─────────────────────────────────────────────────────────
   const handleOpenQuestionModal = (q?: QuestionBankItem) => {
     if (q) {
+      const qData = q.questionData || {};
+      const cAns = q.correctAnswer || {};
+
+      const mcOptions = Array.isArray(qData.options) && qData.options.length > 0
+        ? qData.options
+        : ['Option A', 'Option B', 'Option C', 'Option D'];
+
+      const mcSingleCorrect = cAns.answer || mcOptions[0] || '';
+      const mcMultipleCorrect = Array.isArray(cAns.answers) ? cAns.answers : [mcOptions[0]];
+
+      const orderItems = Array.isArray(qData.items) && qData.items.length > 0
+        ? qData.items
+        : ['Step 1', 'Step 2', 'Step 3'];
+
+      const matchPairs = Array.isArray(qData.pairs) && qData.pairs.length > 0
+        ? qData.pairs
+        : [{ term: 'CPR', definition: 'Cardiopulmonary resuscitation...' }];
+
+      const blankTemplate = qData.template || q.questionText || 'During CPR, perform {0} compressions at a depth of {1}, followed by {2} rescue breaths.';
+      const blanksList = Array.isArray(qData.blanks) && qData.blanks.length > 0
+        ? qData.blanks.map((b: any, idx: number) => ({
+            index: b.index ?? idx,
+            hint: b.hint || '',
+            options: Array.isArray(b.options) ? b.options : ['30', '15', '50'],
+            correctAnswer: cAns.blanks?.[idx] || b.options?.[0] || '30',
+          }))
+        : [
+            { index: 0, hint: 'compressions', options: ['30', '15', '50'], correctAnswer: '30' },
+            { index: 1, hint: 'depth', options: ['5-6 cm', '2 cm', '10 cm'], correctAnswer: '5-6 cm' },
+            { index: 2, hint: 'rescue breaths', options: ['2', '1', '5'], correctAnswer: '2' },
+          ];
+
+      const freeTextMinWords = qData.minWords || 30;
+      const freeTextKeywords = Array.isArray(cAns.keywords) ? cAns.keywords.join(', ') : '';
+
+      const formFields = Array.isArray(qData.fields) && qData.fields.length > 0
+        ? qData.fields
+        : [{ name: 'incidentDate', label: 'Date of Incident', type: 'date', required: true }];
+
       setQuestionForm({
         type: q.type,
         questionText: q.questionText,
         benchmarkAnswer: q.benchmarkAnswer || '',
-        points: q.points,
-        knowledgeEvidenceId: q.knowledgeEvidenceId || '',
+        points: q.points ?? 1,
+        knowledgeEvidenceIds: q.knowledgeEvidences?.map((k) => k.id) || [],
         coreLearningBlobId: q.coreLearningBlobId || '',
-        template: q.questionData?.template || q.questionText,
-        blanksJson: JSON.stringify(q.questionData?.blanks || [], null, 2),
-        optionsText: q.questionData?.options?.join(', ') || '',
-        correctOption: q.correctAnswer?.answer || '',
+        mcOptions,
+        mcSingleCorrect,
+        mcMultipleCorrect,
+        orderItems,
+        matchPairs,
+        blankTemplate,
+        blanksList,
+        freeTextMinWords,
+        freeTextKeywords,
+        formFields,
       });
       setQuestionModal({ open: true, item: q });
     } else {
@@ -300,16 +387,30 @@ export function LmsAdminPage() {
         questionText: '',
         benchmarkAnswer: '',
         points: 1,
-        knowledgeEvidenceId: kes[0]?.id || '',
+        knowledgeEvidenceIds: kes[0] ? [kes[0].id] : [],
         coreLearningBlobId: '',
-        template: 'During CPR, perform {0} compressions at a depth of {1}, followed by {2} rescue breaths.',
-        blanksJson: JSON.stringify([
-          { index: 0, hint: 'compressions', options: ['15', '30', '50'] },
-          { index: 1, hint: 'depth', options: ['2 cm', '5-6 cm', '10 cm'] },
-          { index: 2, hint: 'rescue breaths', options: ['1', '2', '5'] },
-        ], null, 2),
-        optionsText: 'Option A, Option B, Option C, Option D',
-        correctOption: 'Option B',
+        mcOptions: ['Option A', 'Option B', 'Option C', 'Option D'],
+        mcSingleCorrect: 'Option A',
+        mcMultipleCorrect: ['Option A'],
+        orderItems: ['Step 1: Danger & Response', 'Step 2: Airway & Breathing', 'Step 3: CPR & Defibrillation'],
+        matchPairs: [
+          { term: 'CPR', definition: 'Cardiopulmonary resuscitation to restore breathing and circulation' },
+          { term: 'AED', definition: 'Automated External Defibrillator used to reset heart rhythm' },
+          { term: 'Recovery Position', definition: 'Side-lying position to maintain an open airway' },
+        ],
+        blankTemplate: 'During CPR, perform {0} compressions at a depth of {1}, followed by {2} rescue breaths.',
+        blanksList: [
+          { index: 0, hint: 'compressions', options: ['30', '15', '50'], correctAnswer: '30' },
+          { index: 1, hint: 'depth', options: ['5-6 cm', '2 cm', '10 cm'], correctAnswer: '5-6 cm' },
+          { index: 2, hint: 'rescue breaths', options: ['2', '1', '5'], correctAnswer: '2' },
+        ],
+        freeTextMinWords: 30,
+        freeTextKeywords: 'danger, response, airway, breathing, CPR, defibrillator',
+        formFields: [
+          { name: 'incidentDate', label: 'Date of Incident', type: 'date', required: true },
+          { name: 'location', label: 'Location', type: 'text', required: true },
+          { name: 'description', label: 'Incident Description', type: 'textarea', required: true },
+        ],
       });
       setQuestionModal({ open: true, item: null });
     }
@@ -320,41 +421,67 @@ export function LmsAdminPage() {
       let questionData: any = {};
       let correctAnswer: any = {};
 
-      if (questionForm.type === QuestionType.FillInBlanks) {
-        let blanks = [];
-        try {
-          blanks = JSON.parse(questionForm.blanksJson);
-        } catch {
-          alert('Invalid JSON in Blanks configuration');
-          return;
-        }
-        questionData = { template: questionForm.template, blanks };
-        // Extract correct answers from first option of each blank or specified answer
-        correctAnswer = { blanks: blanks.map((b: any) => b.options?.[0] || '30') };
-      } else if (questionForm.type === QuestionType.MultipleChoiceSingle) {
-        const options = questionForm.optionsText.split(',').map((s) => s.trim()).filter(Boolean);
-        questionData = { options };
-        correctAnswer = { answer: questionForm.correctOption || options[0] };
-      } else {
-        questionData = { info: 'Standard Question' };
-        correctAnswer = { answer: 'A' };
+      if (questionForm.type === QuestionType.MultipleChoiceSingle) {
+        const cleanOpts = questionForm.mcOptions.map((s) => s.trim()).filter(Boolean);
+        questionData = { options: cleanOpts };
+        correctAnswer = { answer: questionForm.mcSingleCorrect || cleanOpts[0] || '' };
+      } else if (questionForm.type === QuestionType.MultipleChoiceMultiple) {
+        const cleanOpts = questionForm.mcOptions.map((s) => s.trim()).filter(Boolean);
+        questionData = { options: cleanOpts };
+        correctAnswer = { answers: questionForm.mcMultipleCorrect };
+      } else if (questionForm.type === QuestionType.OrderItems) {
+        const cleanItems = questionForm.orderItems.map((s) => s.trim()).filter(Boolean);
+        questionData = { items: cleanItems };
+        correctAnswer = { order: cleanItems.map((_, idx) => idx) };
+      } else if (questionForm.type === QuestionType.MatchDefinitions) {
+        const cleanPairs = questionForm.matchPairs.filter((p) => p.term.trim() && p.definition.trim());
+        questionData = { pairs: cleanPairs };
+        correctAnswer = { matches: cleanPairs.map((_, idx) => `${idx}-${idx}`) };
+      } else if (questionForm.type === QuestionType.FillInBlanks) {
+        questionData = {
+          template: questionForm.blankTemplate,
+          blanks: questionForm.blanksList.map((b, idx) => ({
+            index: idx,
+            hint: b.hint,
+            options: Array.isArray(b.options) ? b.options : String(b.options).split(',').map((s) => s.trim()).filter(Boolean),
+          })),
+        };
+        correctAnswer = {
+          blanks: questionForm.blanksList.map((b) => b.correctAnswer || (Array.isArray(b.options) ? b.options[0] : String(b.options).split(',')[0]?.trim()) || ''),
+        };
+      } else if (questionForm.type === QuestionType.FreeText) {
+        questionData = { minWords: questionForm.freeTextMinWords || 1 };
+        correctAnswer = {
+          keywords: questionForm.freeTextKeywords.split(',').map((s) => s.trim()).filter(Boolean),
+          minScore: 0.6,
+        };
+      } else if (questionForm.type === QuestionType.Forms) {
+        const cleanFields = questionForm.formFields.filter((f) => f.name.trim());
+        questionData = { fields: cleanFields };
+        correctAnswer = { required: cleanFields.filter((f) => f.required).map((f) => f.name) };
       }
 
       const payload = {
         type: questionForm.type,
-        questionText: questionForm.questionText || questionForm.template,
+        questionText: questionForm.type === QuestionType.FillInBlanks ? questionForm.blankTemplate : questionForm.questionText,
         questionData,
         correctAnswer,
         benchmarkAnswer: questionForm.benchmarkAnswer,
         points: questionForm.points,
-        knowledgeEvidenceId: questionForm.knowledgeEvidenceId || undefined,
+        knowledgeEvidenceIds: questionForm.knowledgeEvidenceIds,
         coreLearningBlobId: questionForm.coreLearningBlobId || undefined,
       };
 
       if (questionModal.item) {
-        await lmsAdminApi.updateQuestion(questionModal.item.id, payload);
+        const res = await lmsAdminApi.updateQuestion(questionModal.item.id, payload);
+        if ((res.data as any)?.isNewVersion) {
+          setMessage('Saved changes as a new question version to protect historical student attempts on published learning plans.');
+        } else {
+          setMessage('Question updated successfully!');
+        }
       } else {
         await lmsAdminApi.createQuestion(payload);
+        setMessage('Question created successfully!');
       }
 
       setQuestionModal({ open: false });
@@ -383,6 +510,7 @@ export function LmsAdminPage() {
         title: plan.title,
         description: plan.description || '',
         isDefault: plan.isDefault,
+        selectedChapterIds: plan.planChapters?.map((pc) => pc.chapterId) || [],
         selectedQuestionIds: plan.planQuestions?.map((pq) => pq.questionId) || [],
       });
       setPlanModal({ open: true, item: plan });
@@ -391,11 +519,38 @@ export function LmsAdminPage() {
         courseCodeId: courseCodes[0]?.id || 0,
         version: 'v1.0',
         title: `${courseCodes[0]?.code || 'HLTAID011'} Standard Plan v1.0`,
-        description: 'Default theory assessment plan',
+        description: 'Default theory learning and assessment plan',
         isDefault: true,
+        selectedChapterIds: chapters.map((ch) => ch.id),
         selectedQuestionIds: questions.map((q) => q.id),
       });
       setPlanModal({ open: true, item: null });
+    }
+  };
+
+  const handleClonePlanToDraft = async (plan: LearningPlan, incrementType: 'minor' | 'major') => {
+    try {
+      await lmsAdminApi.clonePlanToDraft(plan.id, incrementType);
+      setMessage(`Cloned plan ${plan.version} into a new DRAFT version!`);
+      await loadPlans();
+    } catch (err: any) {
+      alert(`Error cloning plan: ${err?.response?.data?.message || err.message}`);
+    }
+  };
+
+  const handleTogglePublishPlan = async (plan: LearningPlan) => {
+    const newStatus = plan.status === 'PUBLISHED' ? 'DRAFT' : 'PUBLISHED';
+    if (newStatus === 'DRAFT' && plan.status === 'PUBLISHED') {
+      if (!confirm('Warning: Putting a published plan back into Draft will lock it from new enrolments. Continue?')) {
+        return;
+      }
+    }
+    try {
+      await lmsAdminApi.updatePlan(plan.id, { status: newStatus });
+      setMessage(`Plan status updated to ${newStatus}`);
+      await loadPlans();
+    } catch (err: any) {
+      alert(`Error updating plan status: ${err?.response?.data?.message || err.message}`);
     }
   };
 
@@ -420,14 +575,21 @@ export function LmsAdminPage() {
         planId = created.data.id;
       }
 
+      // Link selected chapters
+      const chapterItems = planForm.selectedChapterIds.map((chId, idx) => ({
+        chapterId: chId,
+        sortOrder: idx + 1,
+      }));
+      await lmsAdminApi.setPlanChapters(planId, chapterItems);
+
       // Link selected questions
-      const items = planForm.selectedQuestionIds.map((qId, idx) => ({
+      const questionItems = planForm.selectedQuestionIds.map((qId, idx) => ({
         questionId: qId,
         sortOrder: idx + 1,
         points: questions.find((q) => q.id === qId)?.points || 1,
       }));
 
-      await lmsAdminApi.setPlanQuestions(planId, items);
+      await lmsAdminApi.setPlanQuestions(planId, questionItems);
       setPlanModal({ open: false });
       await loadPlans();
     } catch (err: any) {
@@ -633,11 +795,11 @@ export function LmsAdminPage() {
                       <div>
                         <div style={{ fontWeight: 600, fontSize: 15, color: '#1e293b' }}>
                           📦 {b.title}
-                          {b.knowledgeEvidence && (
-                            <span style={{ marginLeft: 8, padding: '2px 6px', backgroundColor: '#eff6ff', color: '#1e40af', borderRadius: 4, fontSize: 11 }}>
-                              KE: {b.knowledgeEvidence.code}
+                          {b.knowledgeEvidences && b.knowledgeEvidences.length > 0 && b.knowledgeEvidences.map((k) => (
+                            <span key={k.id} style={{ marginLeft: 6, padding: '2px 6px', backgroundColor: '#eff6ff', color: '#1e40af', borderRadius: 4, fontSize: 11 }}>
+                              KE: {k.code}
                             </span>
-                          )}
+                          ))}
                         </div>
                         <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>{b.description}</div>
                       </div>
@@ -676,6 +838,7 @@ export function LmsAdminPage() {
                   <th style={{ padding: '12px 16px' }}>Question Text / Template</th>
                   <th style={{ padding: '12px 16px' }}>Knowledge Evidence</th>
                   <th style={{ padding: '12px 16px' }}>Points</th>
+                  <th style={{ padding: '12px 16px' }}>Status</th>
                   <th style={{ padding: '12px 16px', textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
@@ -684,20 +847,47 @@ export function LmsAdminPage() {
                   <tr key={q.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '12px 16px' }}>
                       <span style={{ padding: '2px 8px', backgroundColor: '#eff6ff', color: '#1e40af', borderRadius: 4, fontSize: 12, fontWeight: 600 }}>
-                        Type #{q.type}
+                        {q.type === QuestionType.MultipleChoiceSingle ? '1. MC Single'
+                          : q.type === QuestionType.MultipleChoiceMultiple ? '2. MC Multiple'
+                          : q.type === QuestionType.OrderItems ? '3. Order Items'
+                          : q.type === QuestionType.MatchDefinitions ? '4. Match Definitions'
+                          : q.type === QuestionType.FillInBlanks ? '5. Fill Blanks'
+                          : q.type === QuestionType.FreeText ? '6. AI Free Text'
+                          : q.type === QuestionType.Forms ? '7. Form'
+                          : `Type #${q.type}`}
                       </span>
                     </td>
-                    <td style={{ padding: '12px 16px', fontWeight: 600 }}>{q.questionText}</td>
+                    <td style={{ padding: '12px 16px', fontWeight: 600, maxWidth: 300 }}>
+                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {q.questionText}
+                      </div>
+                    </td>
                     <td style={{ padding: '12px 16px' }}>
-                      {q.knowledgeEvidence ? (
-                        <span style={{ padding: '2px 6px', backgroundColor: '#f0fdf4', color: '#166534', borderRadius: 4, fontSize: 12 }}>
-                          {q.knowledgeEvidence.code}
-                        </span>
+                      {q.knowledgeEvidences && q.knowledgeEvidences.length > 0 ? (
+                        q.knowledgeEvidences.map((k) => (
+                          <span key={k.id} style={{ padding: '2px 6px', backgroundColor: '#f0fdf4', color: '#166534', borderRadius: 4, fontSize: 12, marginRight: 4, display: 'inline-block' }}>
+                            {k.code}
+                          </span>
+                        ))
                       ) : (
                         <span style={{ color: '#94a3b8' }}>Unassigned</span>
                       )}
                     </td>
                     <td style={{ padding: '12px 16px', fontWeight: 700 }}>{q.points} pt</td>
+                    <td style={{ padding: '12px 16px' }}>
+                      {q.isLocked ? (
+                        <span
+                          style={{ padding: '2px 6px', backgroundColor: '#fef3c7', color: '#92400e', borderRadius: 4, fontSize: 11, fontWeight: 600, border: '1px solid #fde68a' }}
+                          title={`Used in published plans: ${q.publishedPlans?.join(', ')}`}
+                        >
+                          🔒 Published ({q.publishedPlans?.length})
+                        </span>
+                      ) : (
+                        <span style={{ padding: '2px 6px', backgroundColor: '#f1f5f9', color: '#475569', borderRadius: 4, fontSize: 11 }}>
+                          Editable
+                        </span>
+                      )}
+                    </td>
                     <td style={{ padding: '12px 16px', textAlign: 'right' }}>
                       <button type="button" onClick={() => handleOpenQuestionModal(q)} style={{ padding: '4px 8px', marginRight: 6, backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 4, cursor: 'pointer' }}>Edit</button>
                       <button type="button" onClick={() => handleDeleteQuestion(q.id)} style={{ padding: '4px 8px', backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 4, cursor: 'pointer' }}>Delete</button>
@@ -746,15 +936,64 @@ export function LmsAdminPage() {
                       <div style={{ fontSize: 13, color: '#64748b' }}>{p.title}</div>
                     </td>
                     <td style={{ padding: '12px 16px' }}>
-                      <span style={{ padding: '2px 8px', backgroundColor: p.status === 'PUBLISHED' ? '#f0fdf4' : '#fffbe2', color: p.status === 'PUBLISHED' ? '#15803d' : '#a16207', borderRadius: 4, fontSize: 12, fontWeight: 600 }}>
-                        {p.status}
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleTogglePublishPlan(p)}
+                        style={{
+                          padding: '3px 10px',
+                          backgroundColor: p.status === 'PUBLISHED' ? '#dcfce7' : '#fef3c7',
+                          color: p.status === 'PUBLISHED' ? '#166534' : '#92400e',
+                          border: `1px solid ${p.status === 'PUBLISHED' ? '#bbf7d0' : '#fde68a'}`,
+                          borderRadius: 12,
+                          fontSize: 12,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                        title={p.status === 'PUBLISHED' ? 'Click to revert status to Draft' : 'Click to publish plan'}
+                      >
+                        {p.status === 'PUBLISHED' ? '✓ PUBLISHED' : '📝 DRAFT'}
+                      </button>
                     </td>
-                    <td style={{ padding: '12px 16px', fontSize: 13 }}>
-                      ❓ {p.planQuestions?.length || 0} questions assigned
+                    <td style={{ padding: '12px 16px', fontSize: 13, color: '#334155' }}>
+                      📖 {p.planChapters?.length || 0} chapters | ❓ {p.planQuestions?.length || 0} questions
                     </td>
                     <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                      <button type="button" onClick={() => handleOpenPlanModal(p)} style={{ padding: '4px 8px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 4, cursor: 'pointer' }}>Edit Plan</button>
+                      {p.status === 'PUBLISHED' ? (
+                        <div style={{ display: 'inline-flex', gap: 6 }}>
+                          <button
+                            type="button"
+                            onClick={() => handleClonePlanToDraft(p, 'minor')}
+                            style={{ padding: '4px 8px', backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+                            title="Clone to new minor draft version (e.g. v1.0 -> v1.1)"
+                          >
+                            + Minor Draft (v+0.1)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleClonePlanToDraft(p, 'major')}
+                            style={{ padding: '4px 8px', backgroundColor: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+                            title="Clone to new major draft version (e.g. v1.0 -> v2.0)"
+                          >
+                            + Major Draft (v+1.0)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenPlanModal(p)}
+                            style={{ padding: '4px 8px', backgroundColor: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
+                            title="View Plan Details (Read-Only)"
+                          >
+                            View
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenPlanModal(p)}
+                          style={{ padding: '4px 8px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 4, cursor: 'pointer' }}
+                        >
+                          Edit Draft
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -782,6 +1021,29 @@ export function LmsAdminPage() {
                 <div style={{ fontSize: 13, fontWeight: 600 }}>Description:</div>
                 <textarea rows={3} value={keForm.description} onChange={(e) => setKeForm({ ...keForm, description: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }} />
               </label>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Mapped Course Codes:</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, padding: 8, border: '1px solid #ccc', borderRadius: 4, maxHeight: 120, overflowY: 'auto' }}>
+                  {courseCodes.map((c) => {
+                    const isChecked = keForm.courseCodeIds.includes(c.id);
+                    return (
+                      <label key={c.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            const updated = e.target.checked
+                              ? [...keForm.courseCodeIds, c.id]
+                              : keForm.courseCodeIds.filter((id) => id !== c.id);
+                            setKeForm({ ...keForm, courseCodeIds: updated });
+                          }}
+                        />
+                        {c.code}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
               <button type="button" onClick={() => setKeModal({ open: false })} style={{ padding: '8px 16px', borderRadius: 4, border: '1px solid #ccc' }}>Cancel</button>
@@ -824,17 +1086,29 @@ export function LmsAdminPage() {
                 <div style={{ fontSize: 13, fontWeight: 600 }}>Title:</div>
                 <input type="text" value={blobForm.title} onChange={(e) => setBlobForm({ ...blobForm, title: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }} />
               </label>
-              <label>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>Mapped Knowledge Evidence (KE):</div>
-                <select value={blobForm.knowledgeEvidenceId} onChange={(e) => setBlobForm({ ...blobForm, knowledgeEvidenceId: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }}>
-                  <option value="">-- Unassigned --</option>
-                  {kes.map((k) => (
-                    <option key={k.id} value={k.id}>
-                      {k.code} - {k.title}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Mapped Knowledge Evidence (KEs):</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 8, border: '1px solid #ccc', borderRadius: 4, maxHeight: 140, overflowY: 'auto' }}>
+                  {kes.map((k) => {
+                    const isChecked = blobForm.knowledgeEvidenceIds.includes(k.id);
+                    return (
+                      <label key={k.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            const updated = e.target.checked
+                              ? [...blobForm.knowledgeEvidenceIds, k.id]
+                              : blobForm.knowledgeEvidenceIds.filter((id) => id !== k.id);
+                            setBlobForm({ ...blobForm, knowledgeEvidenceIds: updated });
+                          }}
+                        />
+                        <strong>{k.code}</strong> &ndash; {k.title}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
               <label>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>Azure Blob Video URL / Vimeo ID:</div>
                 <input type="text" placeholder="https://myazureblob.net/video.mp4 or Vimeo ID" value={blobForm.azureBlobUrl || blobForm.vimeoId} onChange={(e) => setBlobForm({ ...blobForm, azureBlobUrl: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }} />
@@ -855,57 +1129,542 @@ export function LmsAdminPage() {
       {/* ── MODAL: Question ──────────────────────────────────────────────────────── */}
       {questionModal.open && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ backgroundColor: '#fff', borderRadius: 8, padding: 24, maxWidth: 650, width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
-            <h3 style={{ margin: '0 0 16px 0' }}>{questionModal.item ? 'Edit Question' : 'Create Question'}</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <label>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>Question Type:</div>
-                <select value={questionForm.type} onChange={(e) => setQuestionForm({ ...questionForm, type: Number(e.target.value) })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }}>
-                  <option value={QuestionType.MultipleChoiceSingle}>1. Multiple Choice (Single)</option>
-                  <option value={QuestionType.MultipleChoiceMultiple}>2. Multiple Choice (Multiple)</option>
-                  <option value={QuestionType.OrderItems}>3. Order Items</option>
-                  <option value={QuestionType.MatchDefinitions}>4. Match Definitions</option>
-                  <option value={QuestionType.FillInBlanks}>5. Fill in Blanks (Inline Dropdowns)</option>
-                  <option value={QuestionType.FreeText}>6. Free Text (AI Vector Evaluated)</option>
-                  <option value={QuestionType.Forms}>7. Forms</option>
-                </select>
-              </label>
+          <div style={{ backgroundColor: '#fff', borderRadius: 8, padding: 24, maxWidth: 700, width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>
+                {questionModal.item ? 'Edit Question' : 'Create Question'}
+              </h3>
+              <button type="button" onClick={() => setQuestionModal({ open: false })} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#64748b' }}>&times;</button>
+            </div>
 
-              {questionForm.type === QuestionType.FillInBlanks ? (
-                <>
-                  <label>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>Sentence Template (use &#123;0&#125;, &#123;1&#125; for inline dropdowns):</div>
-                    <textarea rows={3} value={questionForm.template} onChange={(e) => setQuestionForm({ ...questionForm, template: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }} />
-                  </label>
-                  <label>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>Dropdown Blanks & Distractors Configuration (JSON):</div>
-                    <textarea rows={6} value={questionForm.blanksJson} onChange={(e) => setQuestionForm({ ...questionForm, blanksJson: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc', fontFamily: 'monospace' }} />
-                  </label>
-                </>
-              ) : (
+            {questionModal.item?.isLocked && (
+              <div style={{ padding: '10px 12px', backgroundColor: '#fef3c7', border: '1px solid #fde68a', borderRadius: 6, color: '#92400e', fontSize: 12, fontWeight: 600, marginBottom: 16 }}>
+                🔒 Note: This question is attached to published learning plan(s) ({questionModal.item.publishedPlans?.join(', ')}). Saving changes will automatically create a new question version to protect historical student assessment responses.
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12 }}>
                 <label>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>Question Text:</div>
-                  <textarea rows={3} value={questionForm.questionText} onChange={(e) => setQuestionForm({ ...questionForm, questionText: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }} />
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Question Type:</div>
+                  <select value={questionForm.type} onChange={(e) => setQuestionForm({ ...questionForm, type: Number(e.target.value) })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }}>
+                    <option value={QuestionType.MultipleChoiceSingle}>1. Multiple Choice (Single Answer)</option>
+                    <option value={QuestionType.MultipleChoiceMultiple}>2. Multiple Choice (Multiple Answers)</option>
+                    <option value={QuestionType.OrderItems}>3. Sequence / Order Items</option>
+                    <option value={QuestionType.MatchDefinitions}>4. Term & Definition Matching</option>
+                    <option value={QuestionType.FillInBlanks}>5. Fill in Blanks (Inline Dropdowns)</option>
+                    <option value={QuestionType.FreeText}>6. Short Answer (AI Vector Evaluation)</option>
+                    <option value={QuestionType.Forms}>7. Forms / Observation Checklist</option>
+                  </select>
+                </label>
+
+                <label>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Points Weighting:</div>
+                  <input type="number" min={1} value={questionForm.points} onChange={(e) => setQuestionForm({ ...questionForm, points: Number(e.target.value) })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }} />
+                </label>
+              </div>
+
+              {/* Question Text / Prompt */}
+              {questionForm.type !== QuestionType.FillInBlanks && (
+                <label>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Question Text / Prompt:</div>
+                  <textarea rows={3} value={questionForm.questionText} onChange={(e) => setQuestionForm({ ...questionForm, questionText: e.target.value })} placeholder="Enter question text or prompt here..." style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }} />
                 </label>
               )}
 
-              <label>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>Mapped Knowledge Evidence (KE):</div>
-                <select value={questionForm.knowledgeEvidenceId} onChange={(e) => setQuestionForm({ ...questionForm, knowledgeEvidenceId: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }}>
-                  <option value="">-- Unassigned --</option>
-                  {kes.map((k) => (
-                    <option key={k.id} value={k.id}>
-                      {k.code} - {k.title}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {/* ── TYPE 1: Multiple Choice Single ───────────────────────────── */}
+              {questionForm.type === QuestionType.MultipleChoiceSingle && (
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 14 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#334155', marginBottom: 8 }}>
+                    Multiple Choice Options (Select Radio Button for Correct Answer)
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {questionForm.mcOptions.map((opt, idx) => (
+                      <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <input
+                          type="radio"
+                          name="mcSingleCorrect"
+                          checked={questionForm.mcSingleCorrect === opt}
+                          onChange={() => setQuestionForm({ ...questionForm, mcSingleCorrect: opt })}
+                          style={{ width: 16, height: 16, cursor: 'pointer' }}
+                          title="Mark as correct answer"
+                        />
+                        <input
+                          type="text"
+                          value={opt}
+                          onChange={(e) => {
+                            const newOpts = [...questionForm.mcOptions];
+                            newOpts[idx] = e.target.value;
+                            setQuestionForm({ ...questionForm, mcOptions: newOpts });
+                          }}
+                          placeholder={`Option ${idx + 1}`}
+                          style={{ flex: 1, padding: '6px 10px', borderRadius: 4, border: '1px solid #ccc', fontSize: 13 }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newOpts = questionForm.mcOptions.filter((_, i) => i !== idx);
+                            setQuestionForm({ ...questionForm, mcOptions: newOpts });
+                          }}
+                          style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '4px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setQuestionForm({ ...questionForm, mcOptions: [...questionForm.mcOptions, `Option ${questionForm.mcOptions.length + 1}`] })}
+                      style={{ marginTop: 4, alignSelf: 'flex-start', padding: '4px 12px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+                    >
+                      + Add Option
+                    </button>
+                  </div>
+                </div>
+              )}
 
-              <label>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>Benchmark Model Answer (for AI Vector Matching):</div>
-                <textarea rows={2} value={questionForm.benchmarkAnswer} onChange={(e) => setQuestionForm({ ...questionForm, benchmarkAnswer: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }} />
-              </label>
+              {/* ── TYPE 2: Multiple Choice Multiple ─────────────────────────── */}
+              {questionForm.type === QuestionType.MultipleChoiceMultiple && (
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 14 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#334155', marginBottom: 8 }}>
+                    Multiple Choice Options (Check All Correct Answers)
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {questionForm.mcOptions.map((opt, idx) => {
+                      const isChecked = questionForm.mcMultipleCorrect.includes(opt);
+                      return (
+                        <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              const updated = e.target.checked
+                                ? [...questionForm.mcMultipleCorrect, opt]
+                                : questionForm.mcMultipleCorrect.filter((o) => o !== opt);
+                              setQuestionForm({ ...questionForm, mcMultipleCorrect: updated });
+                            }}
+                            style={{ width: 16, height: 16, cursor: 'pointer' }}
+                            title="Mark as correct answer"
+                          />
+                          <input
+                            type="text"
+                            value={opt}
+                            onChange={(e) => {
+                              const newOpts = [...questionForm.mcOptions];
+                              newOpts[idx] = e.target.value;
+                              setQuestionForm({ ...questionForm, mcOptions: newOpts });
+                            }}
+                            placeholder={`Option ${idx + 1}`}
+                            style={{ flex: 1, padding: '6px 10px', borderRadius: 4, border: '1px solid #ccc', fontSize: 13 }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newOpts = questionForm.mcOptions.filter((_, i) => i !== idx);
+                              setQuestionForm({ ...questionForm, mcOptions: newOpts });
+                            }}
+                            style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '4px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      onClick={() => setQuestionForm({ ...questionForm, mcOptions: [...questionForm.mcOptions, `Option ${questionForm.mcOptions.length + 1}`] })}
+                      style={{ marginTop: 4, alignSelf: 'flex-start', padding: '4px 12px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+                    >
+                      + Add Option
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── TYPE 3: Sequence / Order Items ──────────────────────────── */}
+              {questionForm.type === QuestionType.OrderItems && (
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 14 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#334155', marginBottom: 4 }}>
+                    Sequence Items (Arrange in Target Correct Order using ▲ ▼)
+                  </div>
+                  <p style={{ margin: '0 0 10px 0', fontSize: 12, color: '#64748b' }}>
+                    The list below defines the correct sequence. On assessment load, student choices are shuffled automatically.
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {questionForm.orderItems.map((item, idx) => (
+                      <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#fff', padding: '6px 10px', border: '1px solid #e2e8f0', borderRadius: 6 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: '#1e40af', width: 50 }}>Step #{idx + 1}</span>
+                        <input
+                          type="text"
+                          value={item}
+                          onChange={(e) => {
+                            const newItems = [...questionForm.orderItems];
+                            newItems[idx] = e.target.value;
+                            setQuestionForm({ ...questionForm, orderItems: newItems });
+                          }}
+                          style={{ flex: 1, padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 13 }}
+                        />
+                        <button
+                          type="button"
+                          disabled={idx === 0}
+                          onClick={() => {
+                            if (idx === 0) return;
+                            const newItems = [...questionForm.orderItems];
+                            const tmp = newItems[idx];
+                            newItems[idx] = newItems[idx - 1];
+                            newItems[idx - 1] = tmp;
+                            setQuestionForm({ ...questionForm, orderItems: newItems });
+                          }}
+                          style={{ padding: '2px 6px', fontSize: 12, cursor: idx === 0 ? 'not-allowed' : 'pointer' }}
+                        >
+                          ▲
+                        </button>
+                        <button
+                          type="button"
+                          disabled={idx === questionForm.orderItems.length - 1}
+                          onClick={() => {
+                            if (idx === questionForm.orderItems.length - 1) return;
+                            const newItems = [...questionForm.orderItems];
+                            const tmp = newItems[idx];
+                            newItems[idx] = newItems[idx + 1];
+                            newItems[idx + 1] = tmp;
+                            setQuestionForm({ ...questionForm, orderItems: newItems });
+                          }}
+                          style={{ padding: '2px 6px', fontSize: 12, cursor: idx === questionForm.orderItems.length - 1 ? 'not-allowed' : 'pointer' }}
+                        >
+                          ▼
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newItems = questionForm.orderItems.filter((_, i) => i !== idx);
+                            setQuestionForm({ ...questionForm, orderItems: newItems });
+                          }}
+                          style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '2px 6px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setQuestionForm({ ...questionForm, orderItems: [...questionForm.orderItems, `Step ${questionForm.orderItems.length + 1}`] })}
+                      style={{ marginTop: 4, alignSelf: 'flex-start', padding: '4px 12px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+                    >
+                      + Add Step
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── TYPE 4: Match Definitions ─────────────────────────────────── */}
+              {questionForm.type === QuestionType.MatchDefinitions && (
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 14 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#334155', marginBottom: 8 }}>
+                    Matching Term & Definition Pairs
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {questionForm.matchPairs.map((pair, idx) => (
+                      <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 2fr auto', gap: 8, alignItems: 'center' }}>
+                        <input
+                          type="text"
+                          placeholder="Term (e.g. CPR)"
+                          value={pair.term}
+                          onChange={(e) => {
+                            const newPairs = [...questionForm.matchPairs];
+                            newPairs[idx] = { ...newPairs[idx], term: e.target.value };
+                            setQuestionForm({ ...questionForm, matchPairs: newPairs });
+                          }}
+                          style={{ padding: '6px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 13, fontWeight: 600 }}
+                        />
+                        <input
+                          type="text"
+                          placeholder="Definition"
+                          value={pair.definition}
+                          onChange={(e) => {
+                            const newPairs = [...questionForm.matchPairs];
+                            newPairs[idx] = { ...newPairs[idx], definition: e.target.value };
+                            setQuestionForm({ ...questionForm, matchPairs: newPairs });
+                          }}
+                          style={{ padding: '6px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 13 }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newPairs = questionForm.matchPairs.filter((_, i) => i !== idx);
+                            setQuestionForm({ ...questionForm, matchPairs: newPairs });
+                          }}
+                          style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '4px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setQuestionForm({ ...questionForm, matchPairs: [...questionForm.matchPairs, { term: '', definition: '' }] })}
+                      style={{ marginTop: 4, alignSelf: 'flex-start', padding: '4px 12px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+                    >
+                      + Add Pair
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── TYPE 5: Fill in Blanks ────────────────────────────────────── */}
+              {questionForm.type === QuestionType.FillInBlanks && (
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <label>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#334155', marginBottom: 4 }}>
+                      Sentence Template (use &#123;0&#125;, &#123;1&#125;, &#123;2&#125; for inline dropdown placeholders):
+                    </div>
+                    <textarea
+                      rows={2}
+                      value={questionForm.blankTemplate}
+                      onChange={(e) => setQuestionForm({ ...questionForm, blankTemplate: e.target.value })}
+                      style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc', fontSize: 13 }}
+                    />
+                  </label>
+
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#334155' }}>
+                    Interactive Dropdown Blanks Configuration
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {questionForm.blanksList.map((blank, idx) => (
+                      <div key={idx} style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: 6, padding: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <strong style={{ fontSize: 13, color: '#1e40af' }}>Blank &#123;{idx}&#125; Config</strong>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newBlanks = questionForm.blanksList.filter((_, i) => i !== idx);
+                              setQuestionForm({ ...questionForm, blanksList: newBlanks });
+                            }}
+                            style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '2px 6px', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
+                          >
+                            Remove Blank
+                          </button>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr', gap: 8, alignItems: 'center' }}>
+                          <div>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block' }}>Hint Label:</label>
+                            <input
+                              type="text"
+                              value={blank.hint}
+                              onChange={(e) => {
+                                const newBlanks = [...questionForm.blanksList];
+                                newBlanks[idx] = { ...newBlanks[idx], hint: e.target.value };
+                                setQuestionForm({ ...questionForm, blanksList: newBlanks });
+                              }}
+                              placeholder="e.g. compressions"
+                              style={{ width: '100%', padding: '4px 6px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 }}
+                            />
+                          </div>
+
+                          <div>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block' }}>Choices (comma-separated):</label>
+                            <input
+                              type="text"
+                              value={Array.isArray(blank.options) ? blank.options.join(', ') : blank.options}
+                              onChange={(e) => {
+                                const opts = e.target.value.split(',').map((s) => s.trim()).filter(Boolean);
+                                const newBlanks = [...questionForm.blanksList];
+                                newBlanks[idx] = { ...newBlanks[idx], options: opts, correctAnswer: opts.includes(blank.correctAnswer) ? blank.correctAnswer : opts[0] || '' };
+                                setQuestionForm({ ...questionForm, blanksList: newBlanks });
+                              }}
+                              placeholder="30, 15, 50"
+                              style={{ width: '100%', padding: '4px 6px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 }}
+                            />
+                          </div>
+
+                          <div>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: '#15803d', display: 'block' }}>Correct Choice:</label>
+                            <select
+                              value={blank.correctAnswer}
+                              onChange={(e) => {
+                                const newBlanks = [...questionForm.blanksList];
+                                newBlanks[idx] = { ...newBlanks[idx], correctAnswer: e.target.value };
+                                setQuestionForm({ ...questionForm, blanksList: newBlanks });
+                              }}
+                              style={{ width: '100%', padding: '4px 6px', borderRadius: 4, border: '1px solid #86efac', background: '#f0fdf4', fontSize: 12, fontWeight: 600 }}
+                            >
+                              {(blank.options || []).map((opt, oIdx) => (
+                                <option key={oIdx} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newIdx = questionForm.blanksList.length;
+                        setQuestionForm({
+                          ...questionForm,
+                          blankTemplate: questionForm.blankTemplate + ` {${newIdx}}`,
+                          blanksList: [...questionForm.blanksList, { index: newIdx, hint: '', options: ['Choice A', 'Choice B'], correctAnswer: 'Choice A' }],
+                        });
+                      }}
+                      style={{ marginTop: 4, alignSelf: 'flex-start', padding: '4px 12px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+                    >
+                      + Add Blank
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── TYPE 6: Free Text / AI Vector Evaluated ───────────────────── */}
+              {questionForm.type === QuestionType.FreeText && (
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#334155' }}>
+                    Short Answer & AI Vector Evaluation
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 12 }}>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block' }}>Minimum Required Words:</label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={questionForm.freeTextMinWords}
+                        onChange={(e) => setQuestionForm({ ...questionForm, freeTextMinWords: Number(e.target.value) })}
+                        style={{ width: '100%', padding: '6px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 13 }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block' }}>Required Evaluation Keywords (comma-separated):</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. danger, response, airway, breathing, CPR"
+                        value={questionForm.freeTextKeywords}
+                        onChange={(e) => setQuestionForm({ ...questionForm, freeTextKeywords: e.target.value })}
+                        style={{ width: '100%', padding: '6px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 13 }}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>
+                      Benchmark Model Answer (for AI Semantic Vector Matching):
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={questionForm.benchmarkAnswer}
+                      onChange={(e) => setQuestionForm({ ...questionForm, benchmarkAnswer: e.target.value })}
+                      placeholder="Enter the benchmark ideal model answer used by AI vector grading to evaluate student responses..."
+                      style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc', fontSize: 13 }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* ── TYPE 7: Forms / Observation Checklist ────────────────────── */}
+              {questionForm.type === QuestionType.Forms && (
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#334155' }}>
+                    Form Field Definitions
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {questionForm.formFields.map((field, idx) => (
+                      <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto auto', gap: 8, alignItems: 'center', background: '#fff', padding: '6px 10px', border: '1px solid #e2e8f0', borderRadius: 6 }}>
+                        <input
+                          type="text"
+                          placeholder="Field Key (e.g. location)"
+                          value={field.name}
+                          onChange={(e) => {
+                            const newFields = [...questionForm.formFields];
+                            newFields[idx] = { ...newFields[idx], name: e.target.value };
+                            setQuestionForm({ ...questionForm, formFields: newFields });
+                          }}
+                          style={{ padding: '4px 6px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 }}
+                        />
+                        <input
+                          type="text"
+                          placeholder="Field Label (e.g. Incident Location)"
+                          value={field.label}
+                          onChange={(e) => {
+                            const newFields = [...questionForm.formFields];
+                            newFields[idx] = { ...newFields[idx], label: e.target.value };
+                            setQuestionForm({ ...questionForm, formFields: newFields });
+                          }}
+                          style={{ padding: '4px 6px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 }}
+                        />
+                        <select
+                          value={field.type}
+                          onChange={(e) => {
+                            const newFields = [...questionForm.formFields];
+                            newFields[idx] = { ...newFields[idx], type: e.target.value };
+                            setQuestionForm({ ...questionForm, formFields: newFields });
+                          }}
+                          style={{ padding: '4px 6px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 }}
+                        >
+                          <option value="text">Short Text</option>
+                          <option value="textarea">Paragraph Text</option>
+                          <option value="date">Date</option>
+                          <option value="checkbox">Checkbox (Pass/Fail)</option>
+                        </select>
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={field.required}
+                            onChange={(e) => {
+                              const newFields = [...questionForm.formFields];
+                              newFields[idx] = { ...newFields[idx], required: e.target.checked };
+                              setQuestionForm({ ...questionForm, formFields: newFields });
+                            }}
+                          />
+                          Req
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newFields = questionForm.formFields.filter((_, i) => i !== idx);
+                            setQuestionForm({ ...questionForm, formFields: newFields });
+                          }}
+                          style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '2px 6px', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setQuestionForm({ ...questionForm, formFields: [...questionForm.formFields, { name: '', label: '', type: 'text', required: true }] })}
+                      style={{ marginTop: 4, alignSelf: 'flex-start', padding: '4px 12px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+                    >
+                      + Add Field
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Mapped Knowledge Evidence (KEs):</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 8, border: '1px solid #ccc', borderRadius: 4, maxHeight: 140, overflowY: 'auto' }}>
+                  {kes.map((k) => {
+                    const isChecked = questionForm.knowledgeEvidenceIds.includes(k.id);
+                    return (
+                      <label key={k.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            const updated = e.target.checked
+                              ? [...questionForm.knowledgeEvidenceIds, k.id]
+                              : questionForm.knowledgeEvidenceIds.filter((id) => id !== k.id);
+                            setQuestionForm({ ...questionForm, knowledgeEvidenceIds: updated });
+                          }}
+                        />
+                        <strong>{k.code}</strong> &ndash; {k.title}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
+
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
               <button type="button" onClick={() => setQuestionModal({ open: false })} style={{ padding: '8px 16px', borderRadius: 4, border: '1px solid #ccc' }}>Cancel</button>
               <button type="button" onClick={handleSaveQuestion} style={{ padding: '8px 16px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: 4, fontWeight: 600 }}>Save Question</button>
@@ -918,35 +1677,92 @@ export function LmsAdminPage() {
       {planModal.open && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ backgroundColor: '#fff', borderRadius: 8, padding: 24, maxWidth: 650, width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
-            <h3 style={{ margin: '0 0 16px 0' }}>{planModal.item ? 'Edit Learning Plan' : 'Create Learning Plan Version'}</h3>
+            <h3 style={{ margin: '0 0 16px 0' }}>{planModal.item ? `Edit Learning Plan (${planModal.item.version})` : 'Create Learning Plan Version'}</h3>
+            
+            {planModal.item?.status === 'PUBLISHED' && (
+              <div style={{ padding: '10px 12px', backgroundColor: '#fef3c7', border: '1px solid #fde68a', borderRadius: 6, color: '#92400e', fontSize: 12, fontWeight: 600, marginBottom: 16 }}>
+                🔒 Locked: Published plans are read-only to guarantee assessment integrity for active students. To make content or assessment changes, close this modal and click "+ Minor Draft" or "+ Major Draft" to create a new draft version.
+              </div>
+            )}
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <label>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>Course Code:</div>
-                <select value={planForm.courseCodeId} onChange={(e) => setPlanForm({ ...planForm, courseCodeId: Number(e.target.value) })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }}>
+                <select
+                  value={planForm.courseCodeId}
+                  disabled={Boolean(planModal.item?.status === 'PUBLISHED')}
+                  onChange={(e) => setPlanForm({ ...planForm, courseCodeId: Number(e.target.value) })}
+                  style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc', opacity: planModal.item?.status === 'PUBLISHED' ? 0.7 : 1 }}
+                >
                   {courseCodes.map((c) => (
                     <option key={c.id} value={c.id}>{c.code} - {c.name}</option>
                   ))}
                 </select>
               </label>
+
               <label>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>Version Identifier (e.g. v1.0, v1.1):</div>
-                <input type="text" value={planForm.version} onChange={(e) => setPlanForm({ ...planForm, version: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }} />
+                <input
+                  type="text"
+                  value={planForm.version}
+                  readOnly={Boolean(planModal.item)}
+                  onChange={(e) => setPlanForm({ ...planForm, version: e.target.value })}
+                  style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc', background: planModal.item ? '#f8fafc' : '#ffffff' }}
+                />
               </label>
+
               <label>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>Plan Title:</div>
-                <input type="text" value={planForm.title} onChange={(e) => setPlanForm({ ...planForm, title: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }} />
+                <input
+                  type="text"
+                  value={planForm.title}
+                  readOnly={Boolean(planModal.item?.status === 'PUBLISHED')}
+                  onChange={(e) => setPlanForm({ ...planForm, title: e.target.value })}
+                  style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc', background: planModal.item?.status === 'PUBLISHED' ? '#f8fafc' : '#ffffff' }}
+                />
               </label>
 
               <div>
-                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Select Questions for this Plan Version:</div>
-                <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid #ccc', padding: 8, borderRadius: 4 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Select Chapters / Content Modules for this Plan:</div>
+                <div style={{ maxHeight: 180, overflowY: 'auto', border: '1px solid #ccc', padding: 8, borderRadius: 4, display: 'flex', flexDirection: 'column', gap: 6, opacity: planModal.item?.status === 'PUBLISHED' ? 0.7 : 1 }}>
+                  {chapters.length === 0 ? (
+                    <div style={{ color: '#94a3b8', fontSize: 13 }}>No chapters available. Create chapters in the Chapters tab.</div>
+                  ) : (
+                    chapters.map((ch) => {
+                      const isChecked = planForm.selectedChapterIds.includes(ch.id);
+                      return (
+                        <label key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: planModal.item?.status === 'PUBLISHED' ? 'not-allowed' : 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            disabled={Boolean(planModal.item?.status === 'PUBLISHED')}
+                            onChange={() => {
+                              if (isChecked) {
+                                setPlanForm({ ...planForm, selectedChapterIds: planForm.selectedChapterIds.filter((id) => id !== ch.id) });
+                              } else {
+                                setPlanForm({ ...planForm, selectedChapterIds: [...planForm.selectedChapterIds, ch.id] });
+                              }
+                            }}
+                          />
+                          <span><strong>{ch.title}</strong> ({ch.blobs?.length || 0} content blocks)</span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Select Assessment Questions for this Plan:</div>
+                <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid #ccc', padding: 8, borderRadius: 4, opacity: planModal.item?.status === 'PUBLISHED' ? 0.7 : 1 }}>
                   {questions.map((q) => {
                     const isChecked = planForm.selectedQuestionIds.includes(q.id);
                     return (
-                      <label key={q.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13, cursor: 'pointer' }}>
+                      <label key={q.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13, cursor: planModal.item?.status === 'PUBLISHED' ? 'not-allowed' : 'pointer' }}>
                         <input
                           type="checkbox"
                           checked={isChecked}
+                          disabled={Boolean(planModal.item?.status === 'PUBLISHED')}
                           onChange={() => {
                             if (isChecked) {
                               setPlanForm({ ...planForm, selectedQuestionIds: planForm.selectedQuestionIds.filter((id) => id !== q.id) });

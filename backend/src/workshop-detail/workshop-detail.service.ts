@@ -723,30 +723,71 @@ export class WorkshopDetailService {
       where: { instanceId },
       include: { learningPlan: { include: { courseCode: true } } },
     });
-    if (!wp) {
-      return {
-        id: null,
-        instanceId,
-        trainerContactId: '',
-        completedSteps: 0,
-        totalSteps: 3,
-        isComplete: false,
-        statusPayload: null,
-        lmsEnabled: false,
-        learningPlanId: null,
-        createdAt: null,
-        updatedAt: null,
-        learningPlan: null,
-      };
+
+    let courseCodeStr = '';
+    try {
+      courseCodeStr = await this.resolveCourseCode(instanceId);
+    } catch (err) {
+      // ignore
     }
-    return wp;
+
+    let availablePlans: any[] = [];
+    if (courseCodeStr) {
+      availablePlans = await this.prisma.learningPlan.findMany({
+        where: {
+          courseCode: {
+            code: { contains: courseCodeStr, mode: 'insensitive' },
+          },
+        },
+        include: { courseCode: true },
+        orderBy: { id: 'desc' },
+      });
+    }
+
+    const allPlans = await this.prisma.learningPlan.findMany({
+      include: { courseCode: true },
+      orderBy: { id: 'desc' },
+    });
+
+    const baseWp = wp ?? {
+      id: null,
+      instanceId,
+      trainerContactId: '',
+      completedSteps: 0,
+      totalSteps: 3,
+      isComplete: false,
+      statusPayload: null,
+      lmsEnabled: false,
+      learningPlanId: null,
+      createdAt: null,
+      updatedAt: null,
+      learningPlan: null,
+    };
+
+    return {
+      ...baseWp,
+      resolvedCourseCode: courseCodeStr,
+      availablePlans: availablePlans.length > 0 ? availablePlans : allPlans,
+      allPlans,
+    };
   }
 
-  async toggleLmsEnabled(instanceId: number, lmsEnabled: boolean) {
+  async toggleLmsEnabled(instanceId: number, lmsEnabled: boolean, learningPlanId?: number | null) {
+    const planId = learningPlanId ? Number(learningPlanId) : null;
     return this.prisma.workshopProgress.upsert({
       where: { instanceId },
-      update: { lmsEnabled: Boolean(lmsEnabled) },
-      create: { instanceId, lmsEnabled: Boolean(lmsEnabled) },
+      update: {
+        lmsEnabled: Boolean(lmsEnabled),
+        learningPlanId: planId,
+      },
+      create: {
+        instanceId,
+        lmsEnabled: Boolean(lmsEnabled),
+        learningPlanId: planId,
+      },
+      include: {
+        learningPlan: { include: { courseCode: true } },
+      },
     });
   }
 

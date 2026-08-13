@@ -81,7 +81,27 @@ export class LmsService {
     const enrollment = await this.prisma.lmsEnrollment.findUnique({
       where: { id },
       include: {
-        learningPlan: true,
+        learningPlan: {
+          include: {
+            planChapters: {
+              orderBy: { sortOrder: 'asc' },
+              include: {
+                chapter: {
+                  include: {
+                    blobs: {
+                      orderBy: { sortOrder: 'asc' },
+                      include: {
+                        knowledgeEvidences: {
+                          select: { id: true, code: true, title: true },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     });
 
@@ -89,21 +109,26 @@ export class LmsService {
       throw new NotFoundException(`Enrollment '${id}' or its learning plan not found`);
     }
 
-    const courseCodeId = enrollment.learningPlan.courseCodeId;
-    const chapters = await this.prisma.lmsChapter.findMany({
-      where: { courseCodeId },
-      orderBy: { sortOrder: 'asc' },
-      include: {
-        blobs: {
-          orderBy: { sortOrder: 'asc' },
-          include: {
-            knowledgeEvidence: {
-              select: { id: true, code: true, title: true },
+    let chapters: any[] = [];
+    if (enrollment.learningPlan.planChapters && enrollment.learningPlan.planChapters.length > 0) {
+      chapters = enrollment.learningPlan.planChapters.map((pc) => pc.chapter);
+    } else {
+      const courseCodeId = enrollment.learningPlan.courseCodeId;
+      chapters = await this.prisma.lmsChapter.findMany({
+        where: courseCodeId ? { courseCodeId } : undefined,
+        orderBy: { sortOrder: 'asc' },
+        include: {
+          blobs: {
+            orderBy: { sortOrder: 'asc' },
+            include: {
+              knowledgeEvidences: {
+                select: { id: true, code: true, title: true },
+              },
             },
           },
         },
-      },
-    });
+      });
+    }
 
     const progressData: ProgressDataModel = enrollment.progressData && typeof enrollment.progressData === 'object'
       ? (enrollment.progressData as any)
@@ -339,7 +364,7 @@ export class LmsService {
       coreBlob = await this.prisma.lmsLearningBlob.create({
         data: {
           chapterId: ch1.id,
-          knowledgeEvidenceId: ke1.id,
+          knowledgeEvidences: { connect: [{ id: ke1.id }] },
           title: 'CPR Fundamentals',
           description: 'Core CPR technique demonstration and 30:2 compression guidelines',
           contentHtml: '<p>When performing CPR on an adult, compress the chest at a rate of 100-120 compressions per minute to a depth of 5-6 cm. Maintain a ratio of 30 compressions followed by 2 rescue breaths.</p>',
@@ -351,7 +376,7 @@ export class LmsService {
     } else {
       await this.prisma.lmsLearningBlob.update({
         where: { id: coreBlob.id },
-        data: { chapterId: ch1.id, knowledgeEvidenceId: ke1.id, contentHtml: '<p>When performing CPR on an adult, compress the chest at a rate of 100-120 compressions per minute to a depth of 5-6 cm. Maintain a ratio of 30 compressions followed by 2 rescue breaths.</p>' },
+        data: { chapterId: ch1.id, knowledgeEvidences: { set: [{ id: ke1.id }] }, contentHtml: '<p>When performing CPR on an adult, compress the chest at a rate of 100-120 compressions per minute to a depth of 5-6 cm. Maintain a ratio of 30 compressions followed by 2 rescue breaths.</p>' },
       });
     }
 
@@ -360,7 +385,7 @@ export class LmsService {
       supportBlob = await this.prisma.lmsLearningBlob.create({
         data: {
           chapterId: ch1.id,
-          knowledgeEvidenceId: ke1.id,
+          knowledgeEvidences: { connect: [{ id: ke1.id }] },
           title: 'CPR Common Mistakes',
           description: 'What to avoid during CPR compressions and rescue breaths',
           contentHtml: '<p>Ensure compressions allow complete chest recoil between pumps. Avoid leaning on the chest or interrupting compressions for more than 10 seconds.</p>',
@@ -372,7 +397,7 @@ export class LmsService {
     } else {
       await this.prisma.lmsLearningBlob.update({
         where: { id: supportBlob.id },
-        data: { chapterId: ch1.id, knowledgeEvidenceId: ke1.id, contentHtml: '<p>Ensure compressions allow complete chest recoil between pumps. Avoid leaning on the chest or interrupting compressions for more than 10 seconds.</p>' },
+        data: { chapterId: ch1.id, knowledgeEvidences: { set: [{ id: ke1.id }] }, contentHtml: '<p>Ensure compressions allow complete chest recoil between pumps. Avoid leaning on the chest or interrupting compressions for more than 10 seconds.</p>' },
       });
     }
 
@@ -394,6 +419,18 @@ export class LmsService {
         },
       });
     }
+
+    await this.prisma.learningPlanChapter.upsert({
+      where: { learningPlanId_chapterId: { learningPlanId: plan.id, chapterId: ch1.id } },
+      update: { sortOrder: 1 },
+      create: { learningPlanId: plan.id, chapterId: ch1.id, sortOrder: 1 },
+    });
+
+    await this.prisma.learningPlanChapter.upsert({
+      where: { learningPlanId_chapterId: { learningPlanId: plan.id, chapterId: ch2.id } },
+      update: { sortOrder: 2 },
+      create: { learningPlanId: plan.id, chapterId: ch2.id, sortOrder: 2 },
+    });
 
     // 4. Questions
     const existingPlanQuestions = await this.prisma.learningPlanQuestion.count({

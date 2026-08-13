@@ -26,7 +26,7 @@ export const lmsApi = {
         azureBlobUrl?: string | null;
         durationSeconds: number;
         status: 'unread' | 'viewed' | 'competent' | 'needs_review';
-        knowledgeEvidence?: { id: string; code: string; title: string };
+        knowledgeEvidences?: Array<{ id: string; code: string; title: string }>;
       }>;
     }>;
     isOverallCompetent: boolean;

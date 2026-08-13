@@ -132,6 +132,270 @@ function formatUsiMatchResults(data: any, msg?: string): string {
   return 'USI verification failed. Please check details and try again.';
 }
 
+function EnrolmentDetailsModal({
+  enrolment,
+  allPlans,
+  onClose,
+  onSaved,
+}: {
+  enrolment: any;
+  allPlans: any[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const toast = useToast();
+  const [learningPlanId, setLearningPlanId] = useState<number | null>(enrolment.learningPlanId ?? null);
+  const [learningMode, setLearningMode] = useState<number>(enrolment.learningMode ?? 3);
+  const [isCompetent, setIsCompetent] = useState<boolean>(Boolean(enrolment.isCompetent));
+  const [showAllPlans, setShowAllPlans] = useState<boolean>(false);
+  const [saving, setSaving] = useState(false);
+
+  const courseCode =
+    enrolment.learningPlan?.courseCode?.code || enrolment.courseCodeStr || '';
+
+  const filteredPlans = courseCode && !showAllPlans
+    ? allPlans.filter((p: any) =>
+        p.courseCode?.code?.toLowerCase().includes(courseCode.toLowerCase())
+      )
+    : allPlans;
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await contactsApi.updateEnrolment(enrolment.id, {
+        learningPlanId,
+        learningMode,
+        isCompetent,
+      });
+      toast.success('Enrolment updated successfully!');
+      onSaved();
+      onClose();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to update enrolment');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const axStatusText =
+    enrolment.axStatus === 'B'
+      ? 'Booked (B)'
+      : enrolment.axStatus === 'T'
+      ? 'Tentative (T)'
+      : enrolment.axStatus === 'P'
+      ? 'Paid (P)'
+      : enrolment.axStatus === 'M'
+      ? 'Moved (M)'
+      : enrolment.axStatus === 'C'
+      ? 'Cancelled (C)'
+      : enrolment.axStatus || 'N/A';
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(15, 23, 42, 0.6)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1100,
+        padding: 16,
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: '#ffffff',
+          borderRadius: 12,
+          padding: 24,
+          width: '100%',
+          maxWidth: 580,
+          maxHeight: '90vh',
+          overflowY: 'auto',
+          boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 16,
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #e2e8f0', paddingBottom: 12 }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#0f172a' }}>
+              Enrolment Details
+            </h2>
+            <p style={{ margin: '4px 0 0 0', fontSize: 13, color: '#64748b' }}>
+              ID: {enrolment.id}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#64748b' }}
+          >
+            &times;
+          </button>
+        </div>
+
+        {/* Editable Assigned Learning Plan Dropdown */}
+        <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#0369a1' }}>
+            Assigned LMS Learning Plan:
+          </label>
+          <select
+            value={learningPlanId ?? ''}
+            onChange={(e) => setLearningPlanId(e.target.value ? Number(e.target.value) : null)}
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              borderRadius: 6,
+              border: '1px solid #93c5fd',
+              fontSize: 13,
+              color: '#0f172a',
+              background: '#ffffff',
+            }}
+          >
+            <option value="">-- No Learning Plan Assigned --</option>
+            {filteredPlans.map((plan: any) => (
+              <option key={plan.id} value={plan.id}>
+                {plan.courseCode?.code || 'Unit'} &bull; {plan.title || 'Plan'} ({plan.version}) [{plan.status || 'DRAFT'}]
+              </option>
+            ))}
+          </select>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 11, color: '#0369a1' }}>
+              {showAllPlans
+                ? 'Showing all plans across all units'
+                : courseCode
+                ? `Filtered for unit: ${courseCode}`
+                : 'Showing all plans'}
+            </span>
+            {courseCode && (
+              <button
+                type="button"
+                onClick={() => setShowAllPlans(!showAllPlans)}
+                style={{ background: 'none', border: 'none', color: '#0284c7', fontSize: 11, fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                {showAllPlans ? 'Filter by Unit' : 'Show All Units'}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Other Settings: Mode & Competency */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 14 }}>
+          <div>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>
+              Learning Mode:
+            </label>
+            <select
+              value={learningMode}
+              onChange={(e) => setLearningMode(Number(e.target.value))}
+              style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
+            >
+              <option value={3}>DeepDive (Mode 3)</option>
+              <option value={2}>Assessment Only (Mode 2)</option>
+              <option value={1}>Mode 1</option>
+            </select>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>
+              Competency Status:
+            </label>
+            <select
+              value={isCompetent ? 'true' : 'false'}
+              onChange={(e) => setIsCompetent(e.target.value === 'true')}
+              style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
+            >
+              <option value="false">In Progress</option>
+              <option value="true">Competent (✓)</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Read-Only Record Fields */}
+        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 14, display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}>
+          <h4 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#334155', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Record Information (Read-Only)
+          </h4>
+
+          <div>
+            <span style={{ color: '#64748b', fontWeight: 600 }}>Enrolment ID: </span>
+            <span style={{ color: '#0f172a', fontFamily: 'monospace' }}>{enrolment.id}</span>
+          </div>
+
+          <div>
+            <span style={{ color: '#64748b', fontWeight: 600 }}>Student Contact ID: </span>
+            <span style={{ color: '#0f172a' }}>{enrolment.contactId}</span>
+          </div>
+
+          <div>
+            <span style={{ color: '#64748b', fontWeight: 600 }}>Workshop Instance ID: </span>
+            <span style={{ color: '#0f172a', fontFamily: 'monospace' }}>
+              {enrolment.instanceId ? `#${enrolment.instanceId}` : 'None (No workshop attached)'}
+            </span>
+          </div>
+
+          <div>
+            <span style={{ color: '#64748b', fontWeight: 600 }}>Course Code: </span>
+            <strong style={{ color: '#0f172a' }}>
+              {courseCode || 'HLTAID Course'}
+            </strong>
+          </div>
+
+          <div>
+            <span style={{ color: '#64748b', fontWeight: 600 }}>Axcelerate Enrolment Status: </span>
+            <span style={{ color: '#0f172a', fontWeight: 600 }}>{axStatusText}</span>
+          </div>
+
+          <div>
+            <span style={{ color: '#64748b', fontWeight: 600 }}>Score / Assessment Points: </span>
+            <span style={{ color: '#0f172a' }}>{enrolment.currentScore || 0} / {enrolment.possibleScore || '-'} points</span>
+          </div>
+
+          <div>
+            <span style={{ color: '#64748b', fontWeight: 600 }}>Enrolled Date: </span>
+            <span style={{ color: '#0f172a' }}>
+              {enrolment.enrolledAt ? new Date(enrolment.enrolledAt).toLocaleString('en-AU') : 'N/A'}
+            </span>
+          </div>
+
+          <div>
+            <span style={{ color: '#64748b', fontWeight: 600 }}>Completion Date: </span>
+            <span style={{ color: '#0f172a' }}>
+              {enrolment.completedAt ? new Date(enrolment.completedAt).toLocaleString('en-AU') : 'Not yet completed'}
+            </span>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, borderTop: '1px solid #e2e8f0', paddingTop: 14 }}>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ background: '#ffffff', color: '#334155', border: '1px solid #cbd5e1', padding: '8px 16px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            style={{ background: '#2563eb', color: '#ffffff', border: 'none', padding: '8px 20px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: saving ? 0.7 : 1 }}
+          >
+            {saving ? 'Saving...' : 'Save Enrolment'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ContactDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const contactIdNum = parseInt(id || '0', 10);
@@ -157,6 +421,8 @@ export function ContactDetailsPage() {
 
   // Summary View State
   const [enrolments, setEnrolments] = useState<any[]>([]);
+  const [allPlans, setAllPlans] = useState<any[]>([]);
+  const [selectedEnrolmentForModal, setSelectedEnrolmentForModal] = useState<any | null>(null);
   const [enrolmentsLoading, setEnrolmentsLoading] = useState(false);
   const [openAvetmissAccordion, setOpenAvetmissAccordion] = useState(false);
   const [openDeclarationsAccordion, setOpenDeclarationsAccordion] = useState(false);
@@ -180,7 +446,13 @@ export function ContactDetailsPage() {
     setEnrolmentsLoading(true);
     try {
       const res = await contactsApi.getEnrolments(contactIdNum);
-      setEnrolments(Array.isArray(res.data) ? res.data : []);
+      const data = res.data;
+      if (Array.isArray(data)) {
+        setEnrolments(data);
+      } else {
+        setEnrolments(data?.enrolments || []);
+        setAllPlans(data?.allPlans || []);
+      }
     } catch (err) {
       console.error('Failed to load student enrolments', err);
       setEnrolments([]);
@@ -784,12 +1056,13 @@ export function ContactDetailsPage() {
                       <th style={{ padding: '10px 12px', fontWeight: 600, color: '#475569' }}>Enrolled Date</th>
                       <th style={{ padding: '10px 12px', fontWeight: 600, color: '#475569' }}>Status</th>
                       <th style={{ padding: '10px 12px', fontWeight: 600, color: '#475569' }}>Workshop</th>
+                      <th style={{ padding: '10px 12px', fontWeight: 600, color: '#475569' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {enrolments.map((enr) => {
                       const planTitle = enr.learningPlan?.title || enr.learningPlan?.courseCode?.name || 'HLTAID Course';
-                      const code = enr.learningPlan?.courseCode?.code || 'Course';
+                      const code = enr.learningPlan?.courseCode?.code || enr.courseCodeStr || 'Course';
                       const modeLabel = enr.learningMode === 3 ? 'DeepDive' : enr.learningMode === 2 ? 'Assessment' : `Mode ${enr.learningMode}`;
                       const dateStr = enr.enrolledAt ? new Date(enr.enrolledAt).toLocaleDateString('en-AU') : '-';
 
@@ -832,6 +1105,25 @@ export function ContactDetailsPage() {
                               <span style={{ color: '#94a3b8' }}>-</span>
                             )}
                           </td>
+                          <td style={{ padding: '10px 12px' }}>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedEnrolmentForModal(enr)}
+                              style={{
+                                background: '#f1f5f9',
+                                color: '#0f172a',
+                                border: '1px solid #cbd5e1',
+                                padding: '4px 8px',
+                                borderRadius: 4,
+                                fontSize: 11,
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                              }}
+                              title="View & Edit Enrolment Details"
+                            >
+                              [...]
+                            </button>
+                          </td>
                         </tr>
                       );
                     })}
@@ -841,6 +1133,15 @@ export function ContactDetailsPage() {
             )}
           </div>
         </div>
+
+        {selectedEnrolmentForModal && (
+          <EnrolmentDetailsModal
+            enrolment={selectedEnrolmentForModal}
+            allPlans={allPlans}
+            onClose={() => setSelectedEnrolmentForModal(null)}
+            onSaved={() => loadEnrolments()}
+          />
+        )}
       </div>
     );
   }
