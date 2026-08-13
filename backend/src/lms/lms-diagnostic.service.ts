@@ -94,6 +94,25 @@ export class LmsDiagnosticService {
 
     const isCompetent = failedQuestionIds.length === 0;
 
+    // Log immutable assessment records for ASQA audit compliance
+    for (const result of results) {
+      const resp = request.responses.find((r) => r.questionId === result.questionId);
+      const qObj = questions.find((q) => q.id === result.questionId);
+      if (resp && qObj) {
+        await this.prisma.lmsAssessmentLog.create({
+          data: {
+            enrollmentId: enrollment.id,
+            questionId: result.questionId,
+            questionTextSnapshot: qObj.questionText || '',
+            submittedAnswer: (resp.answer !== undefined ? resp.answer : resp.answerArray || resp.formData || resp) as any,
+            isCorrect: result.isCorrect,
+            pointsEarned: result.pointsEarned,
+            origin: 'DIAGNOSTIC',
+          },
+        });
+      }
+    }
+
     await this.updateProgressData(
       enrollment.id,
       enrollment.progressData,

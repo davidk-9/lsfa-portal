@@ -76,6 +76,19 @@ export class LmsAdminController {
     return this.lmsAdminService.deleteChapter(id);
   }
 
+  @Post('chapters/:id/blobs')
+  async saveChapterBlobs(
+    @Param('id') chapterId: string,
+    @Body() dto: { items: Array<{ blobId: string; sortOrder: number }> },
+  ) {
+    return this.lmsAdminService.saveChapterBlobs(chapterId, dto.items);
+  }
+
+  @Get('blobs')
+  async getBlobs(@Query('chapterId') chapterId?: string) {
+    return this.lmsAdminService.getBlobs(chapterId);
+  }
+
   @Post('blobs')
   async createLearningBlob(
     @Body()
@@ -165,6 +178,46 @@ export class LmsAdminController {
     return this.lmsAdminService.deleteQuestion(id);
   }
 
+  // ── Question Banks ────────────────────────────────────────────────────────────
+
+  @Get('question-banks')
+  async getQuestionBanks(@Query('courseCodeId') courseCodeId?: string) {
+    const cId = courseCodeId ? parseInt(courseCodeId, 10) : undefined;
+    return this.lmsAdminService.getQuestionBanks(cId);
+  }
+
+  @Post('question-banks')
+  async createQuestionBank(
+    @Body()
+    dto: {
+      name: string;
+      description?: string;
+      courseCodeId?: number;
+      questionIds?: string[];
+    },
+  ) {
+    return this.lmsAdminService.createQuestionBank(dto);
+  }
+
+  @Put('question-banks/:id')
+  async updateQuestionBank(
+    @Param('id') id: string,
+    @Body()
+    dto: {
+      name?: string;
+      description?: string;
+      courseCodeId?: number;
+      questionIds?: string[];
+    },
+  ) {
+    return this.lmsAdminService.updateQuestionBank(id, dto);
+  }
+
+  @Delete('question-banks/:id')
+  async deleteQuestionBank(@Param('id') id: string) {
+    return this.lmsAdminService.deleteQuestionBank(id);
+  }
+
   // ── Learning Plans ────────────────────────────────────────────────────────────
 
   @Get('plans')
@@ -230,5 +283,13 @@ export class LmsAdminController {
     },
   ) {
     return this.lmsAdminService.setPlanChapters(id, dto.items);
+  }
+
+  @Post('plans/:id/question-banks')
+  async setPlanQuestionBanks(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: { bankIds: string[] },
+  ) {
+    return this.lmsAdminService.setPlanQuestionBanks(id, dto.bankIds);
   }
 }

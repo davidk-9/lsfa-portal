@@ -129,6 +129,28 @@ export class LmsAdminService {
     return this.prisma.lmsChapter.delete({ where: { id } });
   }
 
+  async getBlobs(chapterId?: string) {
+    const publishedPlanChapters = await this.prisma.learningPlanChapter.findMany({
+      where: { learningPlan: { status: 'PUBLISHED' } },
+      select: { chapterId: true },
+    });
+    const publishedChapterIds = new Set(publishedPlanChapters.map((pc) => pc.chapterId));
+
+    const blobs = await this.prisma.lmsLearningBlob.findMany({
+      where: chapterId ? { chapterId } : undefined,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        chapter: { select: { id: true, title: true, courseCode: { select: { code: true } } } },
+        knowledgeEvidences: { select: { id: true, code: true, title: true } },
+      },
+    });
+
+    return blobs.map((b) => ({
+      ...b,
+      isLocked: b.isLocked || (b.chapterId ? publishedChapterIds.has(b.chapterId) : false),
+    }));
+  }
+
   async createLearningBlob(dto: {
     chapterId?: string;
     knowledgeEvidenceIds?: string[];
@@ -174,6 +196,54 @@ export class LmsAdminService {
       sortOrder?: number;
     },
   ) {
+    const existing = await this.prisma.lmsLearningBlob.findUnique({
+      where: { id },
+      include: {
+        chapter: {
+          include: {
+            planChapters: {
+              include: { learningPlan: { select: { status: true } } },
+            },
+          },
+        },
+      },
+    });
+
+    if (!existing) throw new NotFoundException(`Learning blob '${id}' not found`);
+
+    const isLocked = existing.isLocked || existing.chapter?.planChapters.some((pc) => pc.learningPlan.status === 'PUBLISHED');
+
+    if (isLocked) {
+      // Auto-Duplicate locked block to a new version for draft plans
+      const newVersion = (existing.version || 1) + 1;
+      const newBlob = await this.prisma.lmsLearningBlob.create({
+        data: {
+          chapterId: dto.chapterId !== undefined ? dto.chapterId : existing.chapterId,
+          title: dto.title ?? existing.title,
+          description: dto.description ?? existing.description,
+          contentHtml: dto.contentHtml ?? existing.contentHtml,
+          vimeoId: dto.vimeoId !== undefined ? dto.vimeoId : existing.vimeoId,
+          azureBlobUrl: dto.azureBlobUrl !== undefined ? dto.azureBlobUrl : existing.azureBlobUrl,
+          durationSeconds: dto.durationSeconds ?? existing.durationSeconds,
+          sortOrder: dto.sortOrder ?? existing.sortOrder,
+          version: newVersion,
+          isLocked: false,
+          parentBlobId: existing.id,
+          knowledgeEvidences: dto.knowledgeEvidenceIds && dto.knowledgeEvidenceIds.length > 0
+            ? { connect: dto.knowledgeEvidenceIds.map((kId) => ({ id: kId })) }
+            : undefined,
+        },
+        include: {
+          knowledgeEvidences: { select: { id: true, code: true, title: true } },
+        },
+      });
+
+      return {
+        ...newBlob,
+        isNewVersion: true,
+      };
+    }
+
     return this.prisma.lmsLearningBlob.update({
       where: { id },
       data: {
@@ -197,6 +267,43 @@ export class LmsAdminService {
 
   async deleteLearningBlob(id: string) {
     return this.prisma.lmsLearningBlob.delete({ where: { id } });
+  }
+
+  async saveChapterBlobs(
+    chapterId: string,
+    items: Array<{ blobId: string; sortOrder: number }>,
+  ) {
+    const chapter = await this.prisma.lmsChapter.findUnique({ where: { id: chapterId } });
+    if (!chapter) throw new NotFoundException(`Chapter '${chapterId}' not found`);
+
+    const blobIdsInChapter = items.map((i) => i.blobId);
+
+    // Update selected blobs to point to this chapter and update sortOrder
+    for (const item of items) {
+      await this.prisma.lmsLearningBlob.update({
+        where: { id: item.blobId },
+        data: { chapterId, sortOrder: item.sortOrder },
+      });
+    }
+
+    // Detach blobs that were removed from this chapter
+    await this.prisma.lmsLearningBlob.updateMany({
+      where: {
+        chapterId,
+        id: { notIn: blobIdsInChapter },
+      },
+      data: { chapterId: null },
+    });
+
+    return this.prisma.lmsChapter.findUnique({
+      where: { id: chapterId },
+      include: {
+        blobs: {
+          orderBy: { sortOrder: 'asc' },
+          include: { knowledgeEvidences: { select: { id: true, code: true, title: true } } },
+        },
+      },
+    });
   }
 
   // ── Question Bank ─────────────────────────────────────────────────────────────
@@ -374,6 +481,94 @@ export class LmsAdminService {
     return this.prisma.lmsQuestion.delete({ where: { id } });
   }
 
+  // ── Question Banks ────────────────────────────────────────────────────────────
+
+  async getQuestionBanks(courseCodeId?: number) {
+    return this.prisma.lmsQuestionBank.findMany({
+      where: courseCodeId ? { courseCodeId } : undefined,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        courseCode: { select: { id: true, code: true, name: true } },
+        questions: {
+          select: { id: true, questionText: true, type: true, points: true },
+        },
+        _count: { select: { plans: true } },
+      },
+    });
+  }
+
+  async createQuestionBank(dto: {
+    name: string;
+    description?: string;
+    courseCodeId?: number;
+    questionIds?: string[];
+  }) {
+    return this.prisma.lmsQuestionBank.create({
+      data: {
+        name: dto.name,
+        description: dto.description || '',
+        courseCodeId: dto.courseCodeId || null,
+        questions: dto.questionIds && dto.questionIds.length > 0
+          ? { connect: dto.questionIds.map((id) => ({ id })) }
+          : undefined,
+      },
+      include: {
+        courseCode: { select: { id: true, code: true, name: true } },
+        questions: { select: { id: true, questionText: true, type: true } },
+      },
+    });
+  }
+
+  async updateQuestionBank(
+    id: string,
+    dto: {
+      name?: string;
+      description?: string;
+      courseCodeId?: number;
+      questionIds?: string[];
+    },
+  ) {
+    return this.prisma.lmsQuestionBank.update({
+      where: { id },
+      data: {
+        name: dto.name,
+        description: dto.description,
+        courseCodeId: dto.courseCodeId,
+        questions: dto.questionIds
+          ? { set: dto.questionIds.map((qId) => ({ id: qId })) }
+          : undefined,
+      },
+      include: {
+        courseCode: { select: { id: true, code: true, name: true } },
+        questions: { select: { id: true, questionText: true, type: true } },
+      },
+    });
+  }
+
+  async deleteQuestionBank(id: string) {
+    return this.prisma.lmsQuestionBank.delete({ where: { id } });
+  }
+
+  async setPlanQuestionBanks(planId: number, bankIds: string[]) {
+    await this.prisma.learningPlan.update({
+      where: { id: planId },
+      data: {
+        questionBanks: { set: bankIds.map((bId) => ({ id: bId })) },
+      },
+    });
+
+    return this.prisma.learningPlan.findUnique({
+      where: { id: planId },
+      include: {
+        questionBanks: {
+          include: {
+            questions: { select: { id: true, questionText: true, type: true } },
+          },
+        },
+      },
+    });
+  }
+
   // ── Learning Plans ────────────────────────────────────────────────────────────
 
   async getLearningPlans(courseCodeId?: number) {
@@ -401,6 +596,15 @@ export class LmsAdminService {
           orderBy: { sortOrder: 'asc' },
           include: {
             question: {
+              include: {
+                knowledgeEvidences: { select: { id: true, code: true } },
+              },
+            },
+          },
+        },
+        questionBanks: {
+          include: {
+            questions: {
               include: {
                 knowledgeEvidences: { select: { id: true, code: true } },
               },
@@ -473,6 +677,103 @@ export class LmsAdminService {
 
     const updatePayload: any = { ...dto };
     if (dto.status === 'PUBLISHED' && existing.status !== 'PUBLISHED') {
+      // 100% KE Coverage Validation Gate
+      const plan = await this.prisma.learningPlan.findUnique({
+        where: { id },
+        include: {
+          courseCode: {
+            include: {
+              knowledgeEvidences: true,
+            },
+          },
+          planChapters: {
+            include: {
+              chapter: {
+                include: {
+                  blobs: {
+                    include: { knowledgeEvidences: true },
+                  },
+                },
+              },
+            },
+          },
+          planQuestions: {
+            include: {
+              question: {
+                include: { knowledgeEvidences: true },
+              },
+            },
+          },
+          questionBanks: {
+            include: {
+              questions: {
+                include: { knowledgeEvidences: true },
+              },
+            },
+          },
+        },
+      });
+
+      if (plan && plan.courseCode) {
+        const requiredKEs = plan.courseCode.knowledgeEvidences || [];
+
+        // Collect all KEs present in attached blobs
+        const blobKeIds = new Set<string>();
+        for (const pc of plan.planChapters) {
+          for (const b of pc.chapter?.blobs || []) {
+            for (const ke of b.knowledgeEvidences || []) {
+              blobKeIds.add(ke.id);
+            }
+          }
+        }
+
+        // Collect all KEs present in attached questions (direct + via banks)
+        const questionKeIds = new Set<string>();
+        for (const pq of plan.planQuestions) {
+          for (const ke of pq.question?.knowledgeEvidences || []) {
+            questionKeIds.add(ke.id);
+          }
+        }
+        for (const qb of plan.questionBanks) {
+          for (const q of qb.questions || []) {
+            for (const ke of q.knowledgeEvidences || []) {
+              questionKeIds.add(ke.id);
+            }
+          }
+        }
+
+        const missingKEs: Array<{ code: string; title: string; missingBlob: boolean; missingQuestion: boolean }> = [];
+
+        for (const ke of requiredKEs) {
+          const hasBlob = blobKeIds.has(ke.id);
+          const hasQuestion = questionKeIds.has(ke.id);
+
+          if (!hasBlob || !hasQuestion) {
+            missingKEs.push({
+              code: ke.code,
+              title: ke.title,
+              missingBlob: !hasBlob,
+              missingQuestion: !hasQuestion,
+            });
+          }
+        }
+
+        if (missingKEs.length > 0) {
+          const details = missingKEs
+            .map((m) => {
+              const gaps: string[] = [];
+              if (m.missingBlob) gaps.push('Content Block');
+              if (m.missingQuestion) gaps.push('Assessment Question');
+              return `${m.code} (${gaps.join(' & ')} missing)`;
+            })
+            .join(', ');
+
+          throw new BadRequestException(
+            `100% Knowledge Evidence (KE) Coverage Gate Failed: Cannot publish Learning Plan. Missing coverage for: ${details}`,
+          );
+        }
+      }
+
       updatePayload.effectiveFrom = new Date();
     }
 

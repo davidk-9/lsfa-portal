@@ -60,6 +60,7 @@ model CourseCode {
   learningPlans      LearningPlan[]
   chapters           LmsChapter[]
   knowledgeEvidences LmsKnowledgeEvidence[]
+  questionBanks      LmsQuestionBank[]
 }
 
 model WorkshopProgress {
@@ -375,6 +376,7 @@ model LearningPlan {
   planChapters     LearningPlanChapter[]
   workshopProgress WorkshopProgress[]
   lmsEnrollments   LmsEnrollment[]
+  questionBanks    LmsQuestionBank[]      @relation("LearningPlanQuestionBanks")
 
   @@unique([courseCodeId, version])
   @@index([courseCodeId])
@@ -409,6 +411,20 @@ model LmsChapter {
   @@index([courseCodeId, sortOrder])
 }
 
+model LmsQuestionBank {
+  id           String         @id @default(uuid())
+  name         String
+  description  String?
+  courseCodeId Int?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  courseCode   CourseCode?    @relation(fields: [courseCodeId], references: [id], onDelete: SetNull)
+  questions    LmsQuestion[]  @relation("QuestionBankQuestions")
+  plans        LearningPlan[] @relation("LearningPlanQuestionBanks")
+
+  @@index([courseCodeId])
+}
+
 model LmsQuestion {
   id                    String                 @id @default(uuid())
   type                  Int                    // QuestionType enum (1-7)
@@ -425,6 +441,8 @@ model LmsQuestion {
   supportLearningBlob   LmsLearningBlob?       @relation("SupportBlobQuestions", fields: [supportLearningBlobId], references: [id], onDelete: SetNull)
   knowledgeEvidences    LmsKnowledgeEvidence[]
   planQuestions         LearningPlanQuestion[]
+  questionBanks         LmsQuestionBank[]      @relation("QuestionBankQuestions")
+  assessmentLogs        LmsAssessmentLog[]
 
   @@index([type])
 }
@@ -439,9 +457,14 @@ model LmsLearningBlob {
   azureBlobUrl        String?
   durationSeconds     Int                   @default(0)
   sortOrder           Int                   @default(0)
+  version             Int                   @default(1)
+  isLocked            Boolean               @default(false)
+  parentBlobId        String?
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
   chapter             LmsChapter?           @relation(fields: [chapterId], references: [id], onDelete: SetNull)
+  parentBlob          LmsLearningBlob?      @relation("BlobVersions", fields: [parentBlobId], references: [id], onDelete: SetNull)
+  childVersions       LmsLearningBlob[]     @relation("BlobVersions")
   knowledgeEvidences  LmsKnowledgeEvidence[]
   coreQuestions       LmsQuestion[]         @relation("CoreBlobQuestions")
   supportQuestions    LmsQuestion[]         @relation("SupportBlobQuestions")
@@ -494,8 +517,26 @@ model LmsEnrollment {
   contact          Contact           @relation(fields: [contactId], references: [id], onDelete: Cascade)
   learningPlan     LearningPlan?     @relation(fields: [learningPlanId], references: [id], onDelete: SetNull)
   workshopProgress WorkshopProgress? @relation(fields: [instanceId], references: [instanceId], onDelete: SetNull)
+  assessmentLogs   LmsAssessmentLog[]
 
   @@index([contactId])
   @@index([learningPlanId])
   @@index([instanceId])
+}
+
+model LmsAssessmentLog {
+  id                   String        @id @default(uuid())
+  enrollmentId         String
+  questionId           String
+  questionTextSnapshot String
+  submittedAnswer      Json          @db.JsonB
+  isCorrect            Boolean
+  pointsEarned         Int           @default(0)
+  origin               String?
+  createdAt            DateTime      @default(now())
+  enrollment           LmsEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  question             LmsQuestion   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([enrollmentId])
+  @@index([questionId])
 }

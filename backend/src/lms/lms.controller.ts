@@ -37,6 +37,24 @@ export class LmsController {
     return this.lmsService.getQuestionsForUnit(unitCode);
   }
 
+  @Get('enrollment/:id/audit-logs')
+  async getAssessmentLogs(@Param('id') id: string) {
+    return this.lmsService.getAssessmentLogs(id);
+  }
+
+  @Post('enrollment/transfer')
+  async transferEnrollment(
+    @Body()
+    dto: {
+      enrollmentId: string;
+      newInstanceId?: number;
+      targetCourseCodeId?: number;
+      targetLearningPlanId?: number;
+    },
+  ) {
+    return this.lmsService.transferEnrollment(dto);
+  }
+
   @Post('enrollment/submit-assessment')
   async submitAssessment(@Body() dto: SubmitAssessmentDto) {
     return this.lmsService.submitAssessment(dto);

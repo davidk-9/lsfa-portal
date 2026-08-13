@@ -1,19 +1,25 @@
 import { useState, useEffect } from 'react';
-import { lmsAdminApi, type KnowledgeEvidence, type Chapter, type LearningBlob, type QuestionBankItem, type LearningPlan } from '../api/lmsAdmin';
+import { lmsAdminApi, type KnowledgeEvidence, type Chapter, type LearningBlob, type QuestionBankItem, type QuestionBank, type LearningPlan } from '../api/lmsAdmin';
 import { settingsApi } from '../api';
 import { QuestionType } from '../lms/types/lms';
 
 export function LmsAdminPage() {
   const [activeTab, setActiveTab] = useState<'ke' | 'content' | 'questions' | 'plans'>('ke');
+  const [contentSubTab, setContentSubTab] = useState<'blobs' | 'chapters'>('blobs');
+  const [questionSubTab, setQuestionSubTab] = useState<'banks' | 'questions'>('banks');
+
   const [courseCodes, setCourseCodes] = useState<Array<{ id: number; code: string; name: string }>>([]);
   const [, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [publishingError, setPublishingError] = useState<string | null>(null);
 
   // Data states
   const [kes, setKes] = useState<KnowledgeEvidence[]>([]);
   const [selectedCourseCodeId, setSelectedCourseCodeId] = useState<number | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
+  const [blobs, setBlobs] = useState<LearningBlob[]>([]);
   const [questions, setQuestions] = useState<QuestionBankItem[]>([]);
+  const [questionBanks, setQuestionBanks] = useState<QuestionBank[]>([]);
   const [plans, setPlans] = useState<LearningPlan[]>([]);
 
   // Modals & Form states
@@ -30,6 +36,15 @@ export function LmsAdminPage() {
     title: '',
     description: '',
     sortOrder: 0,
+  });
+  const [chapterSequencer, setChapterBlobsSequencer] = useState<string[]>([]);
+
+  const [bankModal, setBankModal] = useState<{ open: boolean; item?: QuestionBank | null }>({ open: false });
+  const [bankForm, setBankForm] = useState<{ name: string; description: string; courseCodeId: number | null; questionIds: string[] }>({
+    name: '',
+    description: '',
+    courseCodeId: null,
+    questionIds: [],
   });
 
   const [blobModal, setBlobModal] = useState<{ open: boolean; chapterId?: string; item?: LearningBlob | null }>({ open: false });
@@ -130,6 +145,7 @@ export function LmsAdminPage() {
     description: string;
     isDefault: boolean;
     selectedChapterIds: string[];
+    selectedBankIds: string[];
     selectedQuestionIds: string[];
   }>({
     courseCodeId: 0,
@@ -138,6 +154,7 @@ export function LmsAdminPage() {
     description: '',
     isDefault: true,
     selectedChapterIds: [],
+    selectedBankIds: [],
     selectedQuestionIds: [],
   });
 
@@ -153,12 +170,16 @@ export function LmsAdminPage() {
       setCourseCodes(codes);
       if (codes.length > 0) {
         setSelectedCourseCodeId(codes[0].id);
-        loadChapters(codes[0].id);
-      } else {
-        loadChapters();
       }
 
-      await Promise.all([loadKEs(), loadQuestions(), loadPlans()]);
+      await Promise.all([
+        loadKEs(),
+        loadBlobs(),
+        loadChapters(),
+        loadQuestions(),
+        loadQuestionBanks(),
+        loadPlans(),
+      ]);
     } catch (err: any) {
       console.error('Failed to load LMS admin data:', err);
     } finally {
@@ -171,6 +192,11 @@ export function LmsAdminPage() {
     setKes(res.data || []);
   };
 
+  const loadBlobs = async () => {
+    const res = await lmsAdminApi.getBlobs();
+    setBlobs(res.data || []);
+  };
+
   const loadChapters = async (courseCodeId?: number) => {
     const res = await lmsAdminApi.getChapters(courseCodeId && courseCodeId > 0 ? courseCodeId : undefined);
     setChapters(res.data || []);
@@ -179,6 +205,11 @@ export function LmsAdminPage() {
   const loadQuestions = async () => {
     const res = await lmsAdminApi.getQuestions();
     setQuestions(res.data || []);
+  };
+
+  const loadQuestionBanks = async () => {
+    const res = await lmsAdminApi.getQuestionBanks();
+    setQuestionBanks(res.data || []);
   };
 
   const loadPlans = async () => {
@@ -231,25 +262,38 @@ export function LmsAdminPage() {
   const handleOpenChapterModal = (chapter?: Chapter) => {
     if (chapter) {
       setChapterForm({ title: chapter.title, description: chapter.description || '', sortOrder: chapter.sortOrder });
+      setChapterBlobsSequencer(chapter.blobs?.map((b) => b.id) || []);
       setChapterModal({ open: true, item: chapter });
     } else {
       setChapterForm({ title: '', description: '', sortOrder: chapters.length + 1 });
+      setChapterBlobsSequencer([]);
       setChapterModal({ open: true, item: null });
     }
   };
 
   const handleSaveChapter = async () => {
     try {
+      let chId: string;
       if (chapterModal.item) {
         await lmsAdminApi.updateChapter(chapterModal.item.id, chapterForm);
+        chId = chapterModal.item.id;
       } else {
-        await lmsAdminApi.createChapter({
+        const created = await lmsAdminApi.createChapter({
           ...chapterForm,
           courseCodeId: selectedCourseCodeId && selectedCourseCodeId > 0 ? selectedCourseCodeId : undefined,
         });
+        chId = created.data.id;
       }
+
+      if (chId && chapterSequencer.length >= 0) {
+        const items = chapterSequencer.map((bId, idx) => ({ blobId: bId, sortOrder: idx + 1 }));
+        await lmsAdminApi.saveChapterBlobs(chId, items);
+      }
+
       setChapterModal({ open: false });
-      await loadChapters(selectedCourseCodeId || undefined);
+      await loadChapters();
+      await loadBlobs();
+      setMessage('Chapter and Content Block sequence saved successfully!');
     } catch (err: any) {
       alert(`Error saving Chapter: ${err.message}`);
     }
@@ -259,7 +303,8 @@ export function LmsAdminPage() {
     if (!confirm('Are you sure you want to delete this Chapter and its content blocks?')) return;
     try {
       await lmsAdminApi.deleteChapter(id);
-      if (selectedCourseCodeId) loadChapters(selectedCourseCodeId);
+      await loadChapters();
+      await loadBlobs();
     } catch (err: any) {
       alert(`Error deleting Chapter: ${err.message}`);
     }
@@ -269,7 +314,7 @@ export function LmsAdminPage() {
   const handleOpenBlobModal = (chapterId: string, blob?: LearningBlob) => {
     if (blob) {
       setBlobForm({
-        chapterId,
+        chapterId: blob.chapterId || chapterId || '',
         knowledgeEvidenceIds: blob.knowledgeEvidences?.map((k) => k.id) || [],
         title: blob.title,
         description: blob.description || '',
@@ -279,7 +324,7 @@ export function LmsAdminPage() {
         durationSeconds: blob.durationSeconds || 0,
         sortOrder: blob.sortOrder || 0,
       });
-      setBlobModal({ open: true, chapterId, item: blob });
+      setBlobModal({ open: true, chapterId: blob.chapterId || chapterId, item: blob });
     } else {
       setBlobForm({
         chapterId,
@@ -290,7 +335,7 @@ export function LmsAdminPage() {
         vimeoId: '',
         azureBlobUrl: '',
         durationSeconds: 180,
-        sortOrder: 1,
+        sortOrder: blobs.length + 1,
       });
       setBlobModal({ open: true, chapterId, item: null });
     }
@@ -299,14 +344,21 @@ export function LmsAdminPage() {
   const handleSaveBlob = async () => {
     try {
       if (blobModal.item) {
-        await lmsAdminApi.updateBlob(blobModal.item.id, blobForm);
+        const res = await lmsAdminApi.updateBlob(blobModal.item.id, blobForm);
+        if ((res.data as any)?.isNewVersion) {
+          setMessage('🔒 Content Block was locked. A new version was automatically created for draft plans!');
+        } else {
+          setMessage('Content Block updated successfully!');
+        }
       } else {
         await lmsAdminApi.createBlob(blobForm);
+        setMessage('Content Block created successfully!');
       }
       setBlobModal({ open: false });
-      if (selectedCourseCodeId) loadChapters(selectedCourseCodeId);
+      await loadBlobs();
+      await loadChapters();
     } catch (err: any) {
-      alert(`Error saving Content Block: ${err.message}`);
+      alert(`Error saving Content Block: ${err.response?.data?.message || err.message}`);
     }
   };
 
@@ -314,9 +366,62 @@ export function LmsAdminPage() {
     if (!confirm('Are you sure you want to delete this Content Block?')) return;
     try {
       await lmsAdminApi.deleteBlob(id);
-      if (selectedCourseCodeId) loadChapters(selectedCourseCodeId);
+      await loadBlobs();
+      await loadChapters();
     } catch (err: any) {
       alert(`Error deleting Content Block: ${err.message}`);
+    }
+  };
+
+  // ── Question Bank Container Actions ─────────────────────────────────────────
+  const handleOpenBankModal = (bank?: QuestionBank) => {
+    if (bank) {
+      setBankForm({
+        name: bank.name,
+        description: bank.description || '',
+        courseCodeId: bank.courseCodeId || null,
+        questionIds: bank.questions?.map((q) => q.id) || [],
+      });
+      setBankModal({ open: true, item: bank });
+    } else {
+      setBankForm({
+        name: '',
+        description: '',
+        courseCodeId: selectedCourseCodeId || (courseCodes[0]?.id ?? null),
+        questionIds: [],
+      });
+      setBankModal({ open: true, item: null });
+    }
+  };
+
+  const handleSaveBank = async () => {
+    try {
+      const payload = {
+        ...bankForm,
+        courseCodeId: bankForm.courseCodeId || undefined,
+      };
+      if (bankModal.item) {
+        await lmsAdminApi.updateQuestionBank(bankModal.item.id, payload);
+        setMessage('Question Bank updated successfully!');
+      } else {
+        await lmsAdminApi.createQuestionBank(payload);
+        setMessage('Question Bank created successfully!');
+      }
+      setBankModal({ open: false });
+      await loadQuestionBanks();
+    } catch (err: any) {
+      alert(`Error saving Question Bank: ${err.response?.data?.message || err.message}`);
+    }
+  };
+
+  const handleDeleteBank = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this Question Bank? (Questions inside will remain intact)')) return;
+    try {
+      await lmsAdminApi.deleteQuestionBank(id);
+      await loadQuestionBanks();
+      setMessage('Question Bank deleted');
+    } catch (err: any) {
+      alert(`Error deleting Question Bank: ${err.message}`);
     }
   };
 
@@ -503,6 +608,7 @@ export function LmsAdminPage() {
 
   // ── Plan Actions ─────────────────────────────────────────────────────────────
   const handleOpenPlanModal = (plan?: LearningPlan) => {
+    setPublishingError(null);
     if (plan) {
       setPlanForm({
         courseCodeId: plan.courseCodeId,
@@ -511,6 +617,7 @@ export function LmsAdminPage() {
         description: plan.description || '',
         isDefault: plan.isDefault,
         selectedChapterIds: plan.planChapters?.map((pc) => pc.chapterId) || [],
+        selectedBankIds: plan.questionBanks?.map((qb) => qb.id) || [],
         selectedQuestionIds: plan.planQuestions?.map((pq) => pq.questionId) || [],
       });
       setPlanModal({ open: true, item: plan });
@@ -522,6 +629,7 @@ export function LmsAdminPage() {
         description: 'Default theory learning and assessment plan',
         isDefault: true,
         selectedChapterIds: chapters.map((ch) => ch.id),
+        selectedBankIds: questionBanks.map((qb) => qb.id),
         selectedQuestionIds: questions.map((q) => q.id),
       });
       setPlanModal({ open: true, item: null });
@@ -539,6 +647,7 @@ export function LmsAdminPage() {
   };
 
   const handleTogglePublishPlan = async (plan: LearningPlan) => {
+    setPublishingError(null);
     const newStatus = plan.status === 'PUBLISHED' ? 'DRAFT' : 'PUBLISHED';
     if (newStatus === 'DRAFT' && plan.status === 'PUBLISHED') {
       if (!confirm('Warning: Putting a published plan back into Draft will lock it from new enrolments. Continue?')) {
@@ -550,7 +659,12 @@ export function LmsAdminPage() {
       setMessage(`Plan status updated to ${newStatus}`);
       await loadPlans();
     } catch (err: any) {
-      alert(`Error updating plan status: ${err?.response?.data?.message || err.message}`);
+      const errMsg = err?.response?.data?.message || err.message;
+      if (errMsg.includes('Coverage Gate Failed') || errMsg.includes('100% Knowledge Evidence')) {
+        setPublishingError(errMsg);
+      } else {
+        alert(`Error updating plan status: ${errMsg}`);
+      }
     }
   };
 
@@ -582,6 +696,11 @@ export function LmsAdminPage() {
       }));
       await lmsAdminApi.setPlanChapters(planId, chapterItems);
 
+      // Link selected question banks
+      if (planForm.selectedBankIds) {
+        await lmsAdminApi.setPlanQuestionBanks(planId, planForm.selectedBankIds);
+      }
+
       // Link selected questions
       const questionItems = planForm.selectedQuestionIds.map((qId, idx) => ({
         questionId: qId,
@@ -592,8 +711,9 @@ export function LmsAdminPage() {
       await lmsAdminApi.setPlanQuestions(planId, questionItems);
       setPlanModal({ open: false });
       await loadPlans();
+      setMessage('Learning Plan version saved successfully!');
     } catch (err: any) {
-      alert(`Error saving Learning Plan: ${err.message}`);
+      alert(`Error saving Learning Plan: ${err.response?.data?.message || err.message}`);
     }
   };
 
@@ -611,6 +731,12 @@ export function LmsAdminPage() {
       {message && (
         <div style={{ padding: 12, backgroundColor: '#f0fdf4', color: '#15803d', borderRadius: 8, marginBottom: 20, border: '1px solid #bbf7d0' }}>
           {message}
+        </div>
+      )}
+
+      {publishingError && (
+        <div style={{ padding: 14, backgroundColor: '#fef2f2', color: '#991b1b', borderRadius: 8, marginBottom: 20, border: '1px solid #fecaca', fontWeight: 600, fontSize: 14 }}>
+          🚨 {publishingError}
         </div>
       )}
 
@@ -743,160 +869,361 @@ export function LmsAdminPage() {
       {/* ── TAB 2: Chapters & Content Blocks ───────────────────────────────────────── */}
       {activeTab === 'content' && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <label style={{ fontWeight: 600, fontSize: 14 }}>Select Course:</label>
-              <select
-                value={selectedCourseCodeId || ''}
-                onChange={(e) => {
-                  const id = Number(e.target.value);
-                  setSelectedCourseCodeId(id);
-                  loadChapters(id);
-                }}
-                style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 14, fontWeight: 600 }}
-              >
-                {courseCodes.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.code} - {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
+          {/* Sub-tabs A & B */}
+          <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
             <button
               type="button"
-              onClick={() => handleOpenChapterModal()}
-              style={{ padding: '8px 16px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}
+              onClick={() => setContentSubTab('blobs')}
+              style={{
+                padding: '8px 16px',
+                borderRadius: 6,
+                border: '1px solid #cbd5e1',
+                backgroundColor: contentSubTab === 'blobs' ? '#1e40af' : '#f8fafc',
+                color: contentSubTab === 'blobs' ? '#ffffff' : '#334155',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
             >
-              + Add Chapter
+              📦 Sub-Tab A: Content Blocks (Blobs) ({blobs.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setContentSubTab('chapters')}
+              style={{
+                padding: '8px 16px',
+                borderRadius: 6,
+                border: '1px solid #cbd5e1',
+                backgroundColor: contentSubTab === 'chapters' ? '#1e40af' : '#f8fafc',
+                color: contentSubTab === 'chapters' ? '#ffffff' : '#334155',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              📚 Sub-Tab B: Chapters ({chapters.length})
             </button>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            {chapters.map((ch, idx) => (
-              <div key={ch.id} style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 8, padding: 20 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid #f1f5f9' }}>
-                  <div>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: '#2563eb', textTransform: 'uppercase' }}>Chapter {idx + 1}</span>
-                    <h3 style={{ fontSize: 18, fontWeight: 700, margin: '2px 0 0 0', color: '#0f172a' }}>{ch.title}</h3>
-                    {ch.description && <p style={{ margin: '4px 0 0 0', fontSize: 13, color: '#64748b' }}>{ch.description}</p>}
-                  </div>
-                  <div>
-                    <button type="button" onClick={() => handleOpenBlobModal(ch.id)} style={{ padding: '6px 12px', backgroundColor: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', borderRadius: 6, fontWeight: 600, cursor: 'pointer', marginRight: 8 }}>+ Add Content Block</button>
-                    <button type="button" onClick={() => handleOpenChapterModal(ch)} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 6, cursor: 'pointer', marginRight: 8 }}>Edit</button>
-                    <button type="button" onClick={() => handleDeleteChapter(ch.id)} style={{ padding: '6px 12px', backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 6, cursor: 'pointer' }}>Delete</button>
-                  </div>
+          {/* Sub-Tab A: Content Blocks */}
+          {contentSubTab === 'blobs' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Atomic Content Blocks (Blobs)</h2>
+                <button
+                  type="button"
+                  onClick={() => handleOpenBlobModal('')}
+                  style={{ padding: '8px 16px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  + Create Content Block
+                </button>
+              </div>
+
+              <div style={{ backgroundColor: '#ffffff', borderRadius: 8, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 14 }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>
+                      <th style={{ padding: '12px 16px' }}>Title & Description</th>
+                      <th style={{ padding: '12px 16px' }}>Chapter / Unit</th>
+                      <th style={{ padding: '12px 16px' }}>Knowledge Evidence</th>
+                      <th style={{ padding: '12px 16px' }}>Status & Version</th>
+                      <th style={{ padding: '12px 16px', textAlign: 'right' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {blobs.map((b) => (
+                      <tr key={b.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '12px 16px' }}>
+                          <div style={{ fontWeight: 600, color: '#0f172a' }}>📦 {b.title}</div>
+                          {b.description && <div style={{ fontSize: 13, color: '#64748b' }}>{b.description}</div>}
+                          {(b.vimeoId || b.azureBlobUrl) && (
+                            <div style={{ fontSize: 11, color: '#2563eb', marginTop: 2 }}>
+                              🎥 {b.azureBlobUrl || `Vimeo: ${b.vimeoId}`}
+                            </div>
+                          )}
+                        </td>
+                        <td style={{ padding: '12px 16px', fontSize: 13 }}>
+                          {b.chapter ? (
+                            <span style={{ padding: '2px 8px', backgroundColor: '#f1f5f9', color: '#334155', borderRadius: 4, fontWeight: 600 }}>
+                              📖 {b.chapter.title}
+                            </span>
+                          ) : (
+                            <span style={{ color: '#94a3b8' }}>Unassigned Block</span>
+                          )}
+                        </td>
+                        <td style={{ padding: '12px 16px' }}>
+                          {b.knowledgeEvidences && b.knowledgeEvidences.length > 0 ? (
+                            b.knowledgeEvidences.map((k) => (
+                              <span key={k.id} style={{ padding: '2px 6px', backgroundColor: '#f0fdf4', color: '#166534', borderRadius: 4, fontSize: 12, marginRight: 4, display: 'inline-block' }}>
+                                {k.code}
+                              </span>
+                            ))
+                          ) : (
+                            <span style={{ color: '#94a3b8' }}>None</span>
+                          )}
+                        </td>
+                        <td style={{ padding: '12px 16px' }}>
+                          {b.isLocked ? (
+                            <span style={{ padding: '2px 8px', backgroundColor: '#fef3c7', color: '#92400e', borderRadius: 4, fontSize: 11, fontWeight: 700, border: '1px solid #fde68a' }}>
+                              🔒 Locked (v{b.version || 1})
+                            </span>
+                          ) : (
+                            <span style={{ padding: '2px 8px', backgroundColor: '#f1f5f9', color: '#475569', borderRadius: 4, fontSize: 11 }}>
+                              v{b.version || 1} Draft
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                          <button type="button" onClick={() => handleOpenBlobModal(b.chapterId || '', b)} style={{ padding: '4px 8px', marginRight: 6, backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 4, cursor: 'pointer' }}>Edit</button>
+                          <button type="button" onClick={() => handleDeleteBlob(b.id)} style={{ padding: '4px 8px', backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 4, cursor: 'pointer' }}>Delete</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Sub-Tab B: Chapters */}
+          {contentSubTab === 'chapters' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <label style={{ fontWeight: 600, fontSize: 14 }}>Filter Course:</label>
+                  <select
+                    value={selectedCourseCodeId || ''}
+                    onChange={(e) => {
+                      const id = Number(e.target.value);
+                      setSelectedCourseCodeId(id || null);
+                      loadChapters(id || undefined);
+                    }}
+                    style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 14, fontWeight: 600 }}
+                  >
+                    <option value="">All Courses</option>
+                    {courseCodes.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.code} - {c.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
-                {/* Blocks inside Chapter */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {ch.blobs?.map((b) => (
-                    <div key={b.id} style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  onClick={() => handleOpenChapterModal()}
+                  style={{ padding: '8px 16px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  + Add Chapter
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                {chapters.map((ch, idx) => (
+                  <div key={ch.id} style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 8, padding: 20 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid #f1f5f9' }}>
                       <div>
-                        <div style={{ fontWeight: 600, fontSize: 15, color: '#1e293b' }}>
-                          📦 {b.title}
-                          {b.knowledgeEvidences && b.knowledgeEvidences.length > 0 && b.knowledgeEvidences.map((k) => (
-                            <span key={k.id} style={{ marginLeft: 6, padding: '2px 6px', backgroundColor: '#eff6ff', color: '#1e40af', borderRadius: 4, fontSize: 11 }}>
-                              KE: {k.code}
-                            </span>
-                          ))}
-                        </div>
-                        <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>{b.description}</div>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: '#2563eb', textTransform: 'uppercase' }}>Chapter {idx + 1}</span>
+                        <h3 style={{ fontSize: 18, fontWeight: 700, margin: '2px 0 0 0', color: '#0f172a' }}>{ch.title}</h3>
+                        {ch.description && <p style={{ margin: '4px 0 0 0', fontSize: 13, color: '#64748b' }}>{ch.description}</p>}
                       </div>
                       <div>
-                        <button type="button" onClick={() => handleOpenBlobModal(ch.id, b)} style={{ padding: '4px 8px', backgroundColor: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 4, cursor: 'pointer', marginRight: 6 }}>Edit Block</button>
-                        <button type="button" onClick={() => handleDeleteBlob(b.id)} style={{ padding: '4px 8px', backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 4, cursor: 'pointer' }}>Delete</button>
+                        <button type="button" onClick={() => handleOpenBlobModal(ch.id)} style={{ padding: '6px 12px', backgroundColor: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', borderRadius: 6, fontWeight: 600, cursor: 'pointer', marginRight: 8 }}>+ Add Content Block</button>
+                        <button type="button" onClick={() => handleOpenChapterModal(ch)} style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 6, cursor: 'pointer', marginRight: 8 }}>Edit / Sequence Blocks</button>
+                        <button type="button" onClick={() => handleDeleteChapter(ch.id)} style={{ padding: '6px 12px', backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 6, cursor: 'pointer' }}>Delete</button>
                       </div>
                     </div>
-                  ))}
-                </div>
+
+                    {/* Blocks inside Chapter */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {ch.blobs?.map((b) => (
+                        <div key={b.id} style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: 15, color: '#1e293b' }}>
+                              📦 {b.title}
+                              {b.isLocked && <span style={{ marginLeft: 6, padding: '2px 6px', backgroundColor: '#fef3c7', color: '#92400e', borderRadius: 4, fontSize: 11 }}>🔒 Locked</span>}
+                              {b.knowledgeEvidences && b.knowledgeEvidences.length > 0 && b.knowledgeEvidences.map((k) => (
+                                <span key={k.id} style={{ marginLeft: 6, padding: '2px 6px', backgroundColor: '#eff6ff', color: '#1e40af', borderRadius: 4, fontSize: 11 }}>
+                                  KE: {k.code}
+                                </span>
+                              ))}
+                            </div>
+                            <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>{b.description}</div>
+                          </div>
+                          <div>
+                            <button type="button" onClick={() => handleOpenBlobModal(ch.id, b)} style={{ padding: '4px 8px', backgroundColor: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 4, cursor: 'pointer', marginRight: 6 }}>Edit Block</button>
+                            <button type="button" onClick={() => handleDeleteBlob(b.id)} style={{ padding: '4px 8px', backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 4, cursor: 'pointer' }}>Delete</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* ── TAB 3: Question Bank ───────────────────────────────────────────────────── */}
       {activeTab === 'questions' && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Question Bank</h2>
+          {/* Sub-tabs A & B */}
+          <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
             <button
               type="button"
-              onClick={() => handleOpenQuestionModal()}
-              style={{ padding: '8px 16px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}
+              onClick={() => setQuestionSubTab('banks')}
+              style={{
+                padding: '8px 16px',
+                borderRadius: 6,
+                border: '1px solid #cbd5e1',
+                backgroundColor: questionSubTab === 'banks' ? '#1e40af' : '#f8fafc',
+                color: questionSubTab === 'banks' ? '#ffffff' : '#334155',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
             >
-              + Create Question
+              🏦 Sub-Tab A: Question Banks ({questionBanks.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setQuestionSubTab('questions')}
+              style={{
+                padding: '8px 16px',
+                borderRadius: 6,
+                border: '1px solid #cbd5e1',
+                backgroundColor: questionSubTab === 'questions' ? '#1e40af' : '#f8fafc',
+                color: questionSubTab === 'questions' ? '#ffffff' : '#334155',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              ❓ Sub-Tab B: All Questions ({questions.length})
             </button>
           </div>
 
-          <div style={{ backgroundColor: '#ffffff', borderRadius: 8, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 14 }}>
-              <thead>
-                <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>
-                  <th style={{ padding: '12px 16px' }}>Type</th>
-                  <th style={{ padding: '12px 16px' }}>Question Text / Template</th>
-                  <th style={{ padding: '12px 16px' }}>Knowledge Evidence</th>
-                  <th style={{ padding: '12px 16px' }}>Points</th>
-                  <th style={{ padding: '12px 16px' }}>Status</th>
-                  <th style={{ padding: '12px 16px', textAlign: 'right' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {questions.map((q) => (
-                  <tr key={q.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '12px 16px' }}>
-                      <span style={{ padding: '2px 8px', backgroundColor: '#eff6ff', color: '#1e40af', borderRadius: 4, fontSize: 12, fontWeight: 600 }}>
-                        {q.type === QuestionType.MultipleChoiceSingle ? '1. MC Single'
-                          : q.type === QuestionType.MultipleChoiceMultiple ? '2. MC Multiple'
-                          : q.type === QuestionType.OrderItems ? '3. Order Items'
-                          : q.type === QuestionType.MatchDefinitions ? '4. Match Definitions'
-                          : q.type === QuestionType.FillInBlanks ? '5. Fill Blanks'
-                          : q.type === QuestionType.FreeText ? '6. AI Free Text'
-                          : q.type === QuestionType.Forms ? '7. Form'
-                          : `Type #${q.type}`}
-                      </span>
-                    </td>
-                    <td style={{ padding: '12px 16px', fontWeight: 600, maxWidth: 300 }}>
-                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {q.questionText}
-                      </div>
-                    </td>
-                    <td style={{ padding: '12px 16px' }}>
-                      {q.knowledgeEvidences && q.knowledgeEvidences.length > 0 ? (
-                        q.knowledgeEvidences.map((k) => (
-                          <span key={k.id} style={{ padding: '2px 6px', backgroundColor: '#f0fdf4', color: '#166534', borderRadius: 4, fontSize: 12, marginRight: 4, display: 'inline-block' }}>
-                            {k.code}
+          {/* Sub-Tab A: Question Banks */}
+          {questionSubTab === 'banks' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Assessment Question Banks</h2>
+                <button
+                  type="button"
+                  onClick={() => handleOpenBankModal()}
+                  style={{ padding: '8px 16px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  + Add Question Bank
+                </button>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
+                {questionBanks.map((bank) => (
+                  <div key={bank.id} style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 8, padding: 18, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                        <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: '#0f172a' }}>🏦 {bank.name}</h3>
+                        {bank.courseCode && (
+                          <span style={{ padding: '2px 8px', backgroundColor: '#eff6ff', color: '#1e40af', borderRadius: 4, fontSize: 12, fontWeight: 700 }}>
+                            {bank.courseCode.code}
                           </span>
-                        ))
-                      ) : (
-                        <span style={{ color: '#94a3b8' }}>Unassigned</span>
-                      )}
-                    </td>
-                    <td style={{ padding: '12px 16px', fontWeight: 700 }}>{q.points} pt</td>
-                    <td style={{ padding: '12px 16px' }}>
-                      {q.isLocked ? (
-                        <span
-                          style={{ padding: '2px 6px', backgroundColor: '#fef3c7', color: '#92400e', borderRadius: 4, fontSize: 11, fontWeight: 600, border: '1px solid #fde68a' }}
-                          title={`Used in published plans: ${q.publishedPlans?.join(', ')}`}
-                        >
-                          🔒 Published ({q.publishedPlans?.length})
-                        </span>
-                      ) : (
-                        <span style={{ padding: '2px 6px', backgroundColor: '#f1f5f9', color: '#475569', borderRadius: 4, fontSize: 11 }}>
-                          Editable
-                        </span>
-                      )}
-                    </td>
-                    <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                      <button type="button" onClick={() => handleOpenQuestionModal(q)} style={{ padding: '4px 8px', marginRight: 6, backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 4, cursor: 'pointer' }}>Edit</button>
-                      <button type="button" onClick={() => handleDeleteQuestion(q.id)} style={{ padding: '4px 8px', backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 4, cursor: 'pointer' }}>Delete</button>
-                    </td>
-                  </tr>
+                        )}
+                      </div>
+                      {bank.description && <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 12px 0' }}>{bank.description}</p>}
+                      <div style={{ fontSize: 13, color: '#334155', marginBottom: 12 }}>
+                        ❓ <strong>{bank.questions?.length || 0}</strong> questions included
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, borderTop: '1px solid #f1f5f9', paddingTop: 12 }}>
+                      <button type="button" onClick={() => handleOpenBankModal(bank)} style={{ flex: 1, padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}>Edit Bank</button>
+                      <button type="button" onClick={() => handleDeleteBank(bank.id)} style={{ padding: '6px 12px', backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 6, cursor: 'pointer' }}>Delete</button>
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </div>
+            </div>
+          )}
+
+          {/* Sub-Tab B: All Questions */}
+          {questionSubTab === 'questions' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>All Individual Questions</h2>
+                <button
+                  type="button"
+                  onClick={() => handleOpenQuestionModal()}
+                  style={{ padding: '8px 16px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  + Create Question
+                </button>
+              </div>
+
+              <div style={{ backgroundColor: '#ffffff', borderRadius: 8, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 14 }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>
+                      <th style={{ padding: '12px 16px' }}>Type</th>
+                      <th style={{ padding: '12px 16px' }}>Question Text / Template</th>
+                      <th style={{ padding: '12px 16px' }}>Knowledge Evidence</th>
+                      <th style={{ padding: '12px 16px' }}>Points</th>
+                      <th style={{ padding: '12px 16px' }}>Status</th>
+                      <th style={{ padding: '12px 16px', textAlign: 'right' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {questions.map((q) => (
+                      <tr key={q.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '12px 16px' }}>
+                          <span style={{ padding: '2px 8px', backgroundColor: '#eff6ff', color: '#1e40af', borderRadius: 4, fontSize: 12, fontWeight: 600 }}>
+                            {q.type === QuestionType.MultipleChoiceSingle ? '1. MC Single'
+                              : q.type === QuestionType.MultipleChoiceMultiple ? '2. MC Multiple'
+                              : q.type === QuestionType.OrderItems ? '3. Order Items'
+                              : q.type === QuestionType.MatchDefinitions ? '4. Match Definitions'
+                              : q.type === QuestionType.FillInBlanks ? '5. Fill Blanks'
+                              : q.type === QuestionType.FreeText ? '6. AI Free Text'
+                              : q.type === QuestionType.Forms ? '7. Form'
+                              : `Type #${q.type}`}
+                          </span>
+                        </td>
+                        <td style={{ padding: '12px 16px', fontWeight: 600, maxWidth: 300 }}>
+                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {q.questionText}
+                          </div>
+                        </td>
+                        <td style={{ padding: '12px 16px' }}>
+                          {q.knowledgeEvidences && q.knowledgeEvidences.length > 0 ? (
+                            q.knowledgeEvidences.map((k) => (
+                              <span key={k.id} style={{ padding: '2px 6px', backgroundColor: '#f0fdf4', color: '#166534', borderRadius: 4, fontSize: 12, marginRight: 4, display: 'inline-block' }}>
+                                {k.code}
+                              </span>
+                            ))
+                          ) : (
+                            <span style={{ color: '#94a3b8' }}>Unassigned</span>
+                          )}
+                        </td>
+                        <td style={{ padding: '12px 16px', fontWeight: 700 }}>{q.points} pt</td>
+                        <td style={{ padding: '12px 16px' }}>
+                          {q.isLocked ? (
+                            <span
+                              style={{ padding: '2px 6px', backgroundColor: '#fef3c7', color: '#92400e', borderRadius: 4, fontSize: 11, fontWeight: 600, border: '1px solid #fde68a' }}
+                              title={`Used in published plans: ${q.publishedPlans?.join(', ')}`}
+                            >
+                              🔒 Published ({q.publishedPlans?.length})
+                            </span>
+                          ) : (
+                            <span style={{ padding: '2px 6px', backgroundColor: '#f1f5f9', color: '#475569', borderRadius: 4, fontSize: 11 }}>
+                              Editable
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                          <button type="button" onClick={() => handleOpenQuestionModal(q)} style={{ padding: '4px 8px', marginRight: 6, backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 4, cursor: 'pointer' }}>Edit</button>
+                          <button type="button" onClick={() => handleDeleteQuestion(q.id)} style={{ padding: '4px 8px', backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 4, cursor: 'pointer' }}>Delete</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1053,21 +1380,96 @@ export function LmsAdminPage() {
         </div>
       )}
 
-      {/* ── MODAL: Chapter ───────────────────────────────────────────────────────── */}
+      {/* ── MODAL: Chapter & Block Sequencer ───────────────────────────────────────── */}
       {chapterModal.open && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ backgroundColor: '#fff', borderRadius: 8, padding: 24, maxWidth: 500, width: '100%' }}>
-            <h3 style={{ margin: '0 0 16px 0' }}>{chapterModal.item ? 'Edit Chapter' : 'Add Chapter'}</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ backgroundColor: '#fff', borderRadius: 8, padding: 24, maxWidth: 650, width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
+            <h3 style={{ margin: '0 0 16px 0' }}>{chapterModal.item ? 'Edit Chapter & Sequencer' : 'Add Chapter'}</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <label>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>Chapter Title:</div>
                 <input type="text" value={chapterForm.title} onChange={(e) => setChapterForm({ ...chapterForm, title: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }} />
               </label>
               <label>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>Description:</div>
-                <textarea rows={3} value={chapterForm.description} onChange={(e) => setChapterForm({ ...chapterForm, description: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }} />
+                <textarea rows={2} value={chapterForm.description} onChange={(e) => setChapterForm({ ...chapterForm, description: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }} />
               </label>
+
+              {/* Block Sequencer */}
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 14 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', marginBottom: 8 }}>
+                  🎯 Content Block Sequencer (Select & Order Reading Sequence)
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+                  {chapterSequencer.map((bId, idx) => {
+                    const blobObj = blobs.find((b) => b.id === bId);
+                    if (!blobObj) return null;
+                    return (
+                      <div key={bId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#ffffff', padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: 6 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>
+                          <span style={{ color: '#2563eb', marginRight: 6 }}>#{idx + 1}</span> 📦 {blobObj.title}
+                        </div>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button
+                            type="button"
+                            disabled={idx === 0}
+                            onClick={() => {
+                              const updated = [...chapterSequencer];
+                              const temp = updated[idx];
+                              updated[idx] = updated[idx - 1];
+                              updated[idx - 1] = temp;
+                              setChapterBlobsSequencer(updated);
+                            }}
+                            style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #ccc', background: idx === 0 ? '#f1f5f9' : '#ffffff', cursor: idx === 0 ? 'not-allowed' : 'pointer' }}
+                          >
+                            ▲ Up
+                          </button>
+                          <button
+                            type="button"
+                            disabled={idx === chapterSequencer.length - 1}
+                            onClick={() => {
+                              const updated = [...chapterSequencer];
+                              const temp = updated[idx];
+                              updated[idx] = updated[idx + 1];
+                              updated[idx + 1] = temp;
+                              setChapterBlobsSequencer(updated);
+                            }}
+                            style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #ccc', background: idx === chapterSequencer.length - 1 ? '#f1f5f9' : '#ffffff', cursor: idx === chapterSequencer.length - 1 ? 'not-allowed' : 'pointer' }}
+                          >
+                            ▼ Down
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 6 }}>Attach / Detach Available Content Blocks:</div>
+                <div style={{ maxHeight: 150, overflowY: 'auto', border: '1px solid #cbd5e1', padding: 8, borderRadius: 6, background: '#ffffff', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {blobs.map((b) => {
+                    const isSelected = chapterSequencer.includes(b.id);
+                    return (
+                      <label key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setChapterBlobsSequencer([...chapterSequencer, b.id]);
+                            } else {
+                              setChapterBlobsSequencer(chapterSequencer.filter((id) => id !== b.id));
+                            }
+                          }}
+                        />
+                        <span>📦 {b.title} {b.chapter && b.chapter.id !== chapterModal.item?.id ? `(In: ${b.chapter.title})` : ''}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
+
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
               <button type="button" onClick={() => setChapterModal({ open: false })} style={{ padding: '8px 16px', borderRadius: 4, border: '1px solid #ccc' }}>Cancel</button>
               <button type="button" onClick={handleSaveChapter} style={{ padding: '8px 16px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: 4, fontWeight: 600 }}>Save Chapter</button>
@@ -1076,11 +1478,18 @@ export function LmsAdminPage() {
         </div>
       )}
 
-      {/* ── MODAL: Learning Blob ─────────────────────────────────────────────────── */}
+      {/* ── MODAL: Learning Blob (Content Block) ─────────────────────────────────── */}
       {blobModal.open && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ backgroundColor: '#fff', borderRadius: 8, padding: 24, maxWidth: 600, width: '100%' }}>
             <h3 style={{ margin: '0 0 16px 0' }}>{blobModal.item ? 'Edit Content Block' : 'Add Content Block'}</h3>
+
+            {blobModal.item?.isLocked && (
+              <div style={{ padding: '10px 12px', backgroundColor: '#fef3c7', border: '1px solid #fde68a', borderRadius: 6, color: '#92400e', fontSize: 12, fontWeight: 600, marginBottom: 16 }}>
+                🔒 Note: This Content Block belongs to a published Learning Plan. Saving changes will automatically duplicate it into a new version (v{(blobModal.item.version || 1) + 1}) for draft plans.
+              </div>
+            )}
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <label>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>Title:</div>
@@ -1121,6 +1530,68 @@ export function LmsAdminPage() {
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
               <button type="button" onClick={() => setBlobModal({ open: false })} style={{ padding: '8px 16px', borderRadius: 4, border: '1px solid #ccc' }}>Cancel</button>
               <button type="button" onClick={handleSaveBlob} style={{ padding: '8px 16px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: 4, fontWeight: 600 }}>Save Block</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: Question Bank Container ───────────────────────────────────────── */}
+      {bankModal.open && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ backgroundColor: '#fff', borderRadius: 8, padding: 24, maxWidth: 600, width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
+            <h3 style={{ margin: '0 0 16px 0' }}>{bankModal.item ? 'Edit Question Bank' : 'Add Question Bank'}</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <label>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>Question Bank Name:</div>
+                <input type="text" placeholder="e.g. CPR Assessment Bank" value={bankForm.name} onChange={(e) => setBankForm({ ...bankForm, name: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }} />
+              </label>
+              <label>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>Course Code Association:</div>
+                <select
+                  value={bankForm.courseCodeId || ''}
+                  onChange={(e) => setBankForm({ ...bankForm, courseCodeId: Number(e.target.value) || null })}
+                  style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }}
+                >
+                  <option value="">General (All Courses)</option>
+                  {courseCodes.map((c) => (
+                    <option key={c.id} value={c.id}>{c.code} - {c.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>Description:</div>
+                <textarea rows={2} value={bankForm.description} onChange={(e) => setBankForm({ ...bankForm, description: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }} />
+              </label>
+
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Select Questions to include in this Bank:</div>
+                <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid #cbd5e1', padding: 8, borderRadius: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {questions.map((q) => {
+                    const isChecked = bankForm.questionIds.includes(q.id);
+                    return (
+                      <label key={q.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setBankForm({ ...bankForm, questionIds: [...bankForm.questionIds, q.id] });
+                            } else {
+                              setBankForm({ ...bankForm, questionIds: bankForm.questionIds.filter((id) => id !== q.id) });
+                            }
+                          }}
+                        />
+                        <span>❓ <strong>{q.questionText}</strong></span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+              <button type="button" onClick={() => setBankModal({ open: false })} style={{ padding: '8px 16px', borderRadius: 4, border: '1px solid #ccc' }}>Cancel</button>
+              <button type="button" onClick={handleSaveBank} style={{ padding: '8px 16px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: 4, fontWeight: 600 }}>Save Question Bank</button>
             </div>
           </div>
         </div>
@@ -1753,8 +2224,38 @@ export function LmsAdminPage() {
               </div>
 
               <div>
-                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Select Assessment Questions for this Plan:</div>
-                <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid #ccc', padding: 8, borderRadius: 4, opacity: planModal.item?.status === 'PUBLISHED' ? 0.7 : 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Select Question Banks (Containers) for this Plan:</div>
+                <div style={{ maxHeight: 150, overflowY: 'auto', border: '1px solid #ccc', padding: 8, borderRadius: 4, display: 'flex', flexDirection: 'column', gap: 6, opacity: planModal.item?.status === 'PUBLISHED' ? 0.7 : 1 }}>
+                  {questionBanks.length === 0 ? (
+                    <div style={{ color: '#94a3b8', fontSize: 13 }}>No question banks created yet.</div>
+                  ) : (
+                    questionBanks.map((qb) => {
+                      const isChecked = planForm.selectedBankIds.includes(qb.id);
+                      return (
+                        <label key={qb.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: planModal.item?.status === 'PUBLISHED' ? 'not-allowed' : 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            disabled={Boolean(planModal.item?.status === 'PUBLISHED')}
+                            onChange={() => {
+                              if (isChecked) {
+                                setPlanForm({ ...planForm, selectedBankIds: planForm.selectedBankIds.filter((id) => id !== qb.id) });
+                              } else {
+                                setPlanForm({ ...planForm, selectedBankIds: [...planForm.selectedBankIds, qb.id] });
+                              }
+                            }}
+                          />
+                          <span>🏦 <strong>{qb.name}</strong> ({qb.questions?.length || 0} questions)</span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Select Additional Individual Questions:</div>
+                <div style={{ maxHeight: 180, overflowY: 'auto', border: '1px solid #ccc', padding: 8, borderRadius: 4, opacity: planModal.item?.status === 'PUBLISHED' ? 0.7 : 1 }}>
                   {questions.map((q) => {
                     const isChecked = planForm.selectedQuestionIds.includes(q.id);
                     return (
@@ -1771,7 +2272,7 @@ export function LmsAdminPage() {
                             }
                           }}
                         />
-                        <span>{q.questionText}</span>
+                        <span>❓ {q.questionText}</span>
                       </label>
                     );
                   })}

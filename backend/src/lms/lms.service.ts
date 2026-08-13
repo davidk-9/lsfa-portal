@@ -294,6 +294,177 @@ export class LmsService {
     });
   }
 
+  async getAssessmentLogs(enrollmentId: string) {
+    return this.prisma.lmsAssessmentLog.findMany({
+      where: { enrollmentId },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        question: { select: { id: true, questionText: true, type: true } },
+      },
+    });
+  }
+
+  async transferEnrollment(dto: {
+    enrollmentId: string;
+    newInstanceId?: number;
+    targetCourseCodeId?: number;
+    targetLearningPlanId?: number;
+  }) {
+    const enrollment = await this.prisma.lmsEnrollment.findUnique({
+      where: { id: dto.enrollmentId },
+      include: {
+        learningPlan: {
+          include: {
+            courseCode: true,
+            planChapters: {
+              include: { chapter: { include: { blobs: { include: { knowledgeEvidences: true } } } } },
+            },
+            planQuestions: {
+              include: { question: { include: { knowledgeEvidences: true } } },
+            },
+          },
+        },
+      },
+    });
+
+    if (!enrollment) {
+      throw new NotFoundException(`Enrollment '${dto.enrollmentId}' not found`);
+    }
+
+    const currentCourseCodeId = enrollment.learningPlan?.courseCodeId;
+    const isSameCourseCode =
+      !dto.targetCourseCodeId ||
+      dto.targetCourseCodeId === currentCourseCodeId;
+
+    if (isSameCourseCode && (!dto.targetLearningPlanId || dto.targetLearningPlanId === enrollment.learningPlanId)) {
+      // Same-Unit Transfer: update instanceId only, preserve active LmsEnrollment & learningPlanId & progressData
+      return this.prisma.lmsEnrollment.update({
+        where: { id: dto.enrollmentId },
+        data: { instanceId: dto.newInstanceId ?? enrollment.instanceId },
+      });
+    }
+
+    // Cross-Course Transfer or Plan Migration
+    const targetPlanId = dto.targetLearningPlanId || (dto.targetCourseCodeId
+      ? (await this.prisma.learningPlan.findFirst({
+          where: { courseCodeId: dto.targetCourseCodeId, isDefault: true, status: 'PUBLISHED' },
+        }))?.id || (await this.prisma.learningPlan.findFirst({
+          where: { courseCodeId: dto.targetCourseCodeId },
+          orderBy: { id: 'desc' },
+        }))?.id
+      : enrollment.learningPlanId);
+
+    if (!targetPlanId) {
+      throw new BadRequestException(`No suitable target Learning Plan found for course code ID ${dto.targetCourseCodeId}`);
+    }
+
+    const targetPlan = await this.prisma.learningPlan.findUnique({
+      where: { id: targetPlanId },
+      include: {
+        courseCode: true,
+        planChapters: {
+          include: { chapter: { include: { blobs: { include: { knowledgeEvidences: true } } } } },
+        },
+        planQuestions: {
+          include: { question: { include: { knowledgeEvidences: true } } },
+        },
+        questionBanks: {
+          include: { questions: { include: { knowledgeEvidences: true } } },
+        },
+      },
+    });
+
+    if (!targetPlan) {
+      throw new NotFoundException(`Target learning plan '${targetPlanId}' not found`);
+    }
+
+    // Find satisfied KEs from source enrollment
+    const sourceProgress: ProgressDataModel = enrollment.progressData && typeof enrollment.progressData === 'object'
+      ? (enrollment.progressData as any)
+      : { answeredQuestions: [], viewedBlobs: [], requiredReview: [], assessmentAttempts: [], lastActivityAt: new Date().toISOString(), currentQuestionIndex: 0, isCompetent: false };
+
+    const satisfiedKeIds = new Set<string>();
+
+    // Check source answered questions that were correct
+    for (const aq of sourceProgress.answeredQuestions || []) {
+      if (aq.isCorrect) {
+        const sourceQ = enrollment.learningPlan?.planQuestions.find((pq) => pq.questionId === aq.questionId)?.question;
+        for (const ke of sourceQ?.knowledgeEvidences || []) {
+          satisfiedKeIds.add(ke.id);
+        }
+      }
+    }
+
+    // Check source viewed blobs
+    for (const vb of sourceProgress.viewedBlobs || []) {
+      if (vb.completedView) {
+        for (const pc of enrollment.learningPlan?.planChapters || []) {
+          const blob = pc.chapter?.blobs.find((b) => b.id === vb.blobId);
+          for (const ke of blob?.knowledgeEvidences || []) {
+            satisfiedKeIds.add(ke.id);
+          }
+        }
+      }
+    }
+
+    // Auto-credit target blocks & questions that share satisfied KEs
+    const newProgressData: ProgressDataModel = { ...sourceProgress };
+    newProgressData.viewedBlobs = [...(newProgressData.viewedBlobs || [])];
+    newProgressData.answeredQuestions = [...(newProgressData.answeredQuestions || [])];
+
+    // Credit target blobs
+    for (const pc of targetPlan.planChapters) {
+      for (const blob of pc.chapter?.blobs || []) {
+        const hasSharedKe = blob.knowledgeEvidences.some((ke) => satisfiedKeIds.has(ke.id));
+        if (hasSharedKe && !newProgressData.viewedBlobs.some((v) => v.blobId === blob.id)) {
+          newProgressData.viewedBlobs.push({
+            blobId: blob.id,
+            blobType: 'Core',
+            viewedAt: new Date().toISOString(),
+            viewDurationSeconds: blob.durationSeconds || 60,
+            completedView: true,
+          });
+        }
+      }
+    }
+
+    // Credit target questions
+    const allTargetQuestions = [
+      ...targetPlan.planQuestions.map((pq) => pq.question),
+      ...targetPlan.questionBanks.flatMap((qb) => qb.questions),
+    ];
+
+    for (const q of allTargetQuestions) {
+      const hasSharedKe = q.knowledgeEvidences.some((ke) => satisfiedKeIds.has(ke.id));
+      if (hasSharedKe && !newProgressData.answeredQuestions.some((a) => a.questionId === q.id)) {
+        newProgressData.answeredQuestions.push({
+          questionId: q.id,
+          questionType: q.type,
+          answeredAt: new Date().toISOString(),
+          isCorrect: true,
+          pointsEarned: q.points || 1,
+          answer: 'Credit Recognized from Previous Enrollment',
+          attemptCount: 1,
+        });
+      }
+    }
+
+    newProgressData.lastActivityAt = new Date().toISOString();
+
+    return this.prisma.lmsEnrollment.update({
+      where: { id: dto.enrollmentId },
+      data: {
+        instanceId: dto.newInstanceId ?? enrollment.instanceId,
+        learningPlanId: targetPlan.id,
+        courseCodeStr: targetPlan.courseCode?.code || enrollment.courseCodeStr,
+        progressData: newProgressData as any,
+      },
+      include: {
+        learningPlan: { include: { courseCode: true } },
+      },
+    });
+  }
+
   async seedSampleData() {
     // 1. CourseCodes
     const cprCode = await this.prisma.courseCode.upsert({

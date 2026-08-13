@@ -30,7 +30,11 @@ export interface LearningBlob {
   azureBlobUrl?: string | null;
   durationSeconds: number;
   sortOrder: number;
+  version?: number;
+  isLocked?: boolean;
+  parentBlobId?: string | null;
   knowledgeEvidences?: Array<{ id: string; code: string; title: string }>;
+  chapter?: { id: string; title: string; courseCode?: { code: string } };
 }
 
 export interface QuestionBankItem {
@@ -47,6 +51,16 @@ export interface QuestionBankItem {
   coreLearningBlob?: { id: string; title: string };
   isLocked?: boolean;
   publishedPlans?: string[];
+}
+
+export interface QuestionBank {
+  id: string;
+  name: string;
+  description?: string;
+  courseCodeId?: number | null;
+  courseCode?: { id: number; code: string; name: string };
+  questions?: Array<{ id: string; questionText: string; type: number; points?: number }>;
+  _count?: { plans: number };
 }
 
 export interface LearningPlan {
@@ -70,6 +84,7 @@ export interface LearningPlan {
     points?: number;
     question: QuestionBankItem;
   }>;
+  questionBanks?: QuestionBank[];
   _count?: { lmsEnrollments: number };
 }
 
@@ -89,7 +104,10 @@ export const lmsAdminApi = {
   updateChapter: (id: string, data: { title?: string; description?: string; sortOrder?: number }) =>
     api.put<Chapter>(`/lms-admin/chapters/${id}`, data),
   deleteChapter: (id: string) => api.delete(`/lms-admin/chapters/${id}`),
+  saveChapterBlobs: (chapterId: string, items: Array<{ blobId: string; sortOrder: number }>) =>
+    api.post<Chapter>(`/lms-admin/chapters/${chapterId}/blobs`, { items }),
 
+  getBlobs: (chapterId?: string) => api.get<LearningBlob[]>(`/lms-admin/blobs${chapterId ? `?chapterId=${chapterId}` : ''}`),
   createBlob: (data: {
     chapterId?: string;
     knowledgeEvidenceIds?: string[];
@@ -117,7 +135,16 @@ export const lmsAdminApi = {
   ) => api.put<LearningBlob>(`/lms-admin/blobs/${id}`, data),
   deleteBlob: (id: string) => api.delete(`/lms-admin/blobs/${id}`),
 
-  // Question Bank
+  // Question Banks
+  getQuestionBanks: (courseCodeId?: number) =>
+    api.get<QuestionBank[]>(`/lms-admin/question-banks${courseCodeId ? `?courseCodeId=${courseCodeId}` : ''}`),
+  createQuestionBank: (data: { name: string; description?: string; courseCodeId?: number; questionIds?: string[] }) =>
+    api.post<QuestionBank>('/lms-admin/question-banks', data),
+  updateQuestionBank: (id: string, data: { name?: string; description?: string; courseCodeId?: number; questionIds?: string[] }) =>
+    api.put<QuestionBank>(`/lms-admin/question-banks/${id}`, data),
+  deleteQuestionBank: (id: string) => api.delete(`/lms-admin/question-banks/${id}`),
+
+  // Question Bank Items
   getQuestions: () => api.get<QuestionBankItem[]>('/lms-admin/questions'),
   createQuestion: (data: {
     type: number;
@@ -160,4 +187,6 @@ export const lmsAdminApi = {
     planId: number,
     items: Array<{ chapterId: string; sortOrder: number }>,
   ) => api.post<LearningPlan>(`/lms-admin/plans/${planId}/chapters`, { items }),
+  setPlanQuestionBanks: (planId: number, bankIds: string[]) =>
+    api.post<LearningPlan>(`/lms-admin/plans/${planId}/question-banks`, { bankIds }),
 };
