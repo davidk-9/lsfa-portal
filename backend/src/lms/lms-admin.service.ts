@@ -8,16 +8,53 @@ export class LmsAdminService {
   // ── Knowledge Evidence (KE) ──────────────────────────────────────────────────
 
   async getKnowledgeEvidences() {
-    return this.prisma.lmsKnowledgeEvidence.findMany({
+    const publishedPlanChapters = await this.prisma.learningPlanChapter.findMany({
+      where: { learningPlan: { status: 'PUBLISHED' } },
+      select: { chapterId: true },
+    });
+    const publishedChapterIds = new Set(publishedPlanChapters.map((pc) => pc.chapterId));
+
+    const publishedPlanQuestions = await this.prisma.learningPlanQuestion.findMany({
+      where: { learningPlan: { status: 'PUBLISHED' } },
+      select: { questionId: true },
+    });
+    const publishedQuestionIds = new Set(publishedPlanQuestions.map((pq) => pq.questionId));
+
+    const publishedPlanBanks = await this.prisma.learningPlan.findMany({
+      where: { status: 'PUBLISHED' },
+      select: { questionBanks: { select: { questions: { select: { id: true } } } } },
+    });
+    for (const plan of publishedPlanBanks) {
+      for (const bank of plan.questionBanks) {
+        for (const q of bank.questions) {
+          publishedQuestionIds.add(q.id);
+        }
+      }
+    }
+
+    const kes = await this.prisma.lmsKnowledgeEvidence.findMany({
       include: {
-        courseCodes: {
-          select: { id: true, code: true, name: true },
-        },
-        _count: {
-          select: { blobs: true, questions: true },
-        },
+        courseCodes: { select: { id: true, code: true, name: true } },
+        blobs: { select: { id: true, chapterId: true } },
+        questions: { select: { id: true } },
+        _count: { select: { blobs: true, questions: true } },
       },
       orderBy: { code: 'asc' },
+    });
+
+    return kes.map((ke) => {
+      const hasPublishedBlob = ke.blobs.some((b) => b.chapterId && publishedChapterIds.has(b.chapterId));
+      const hasPublishedQuestion = ke.questions.some((q) => publishedQuestionIds.has(q.id));
+      const isLocked = hasPublishedBlob || hasPublishedQuestion;
+      return {
+        id: ke.id,
+        code: ke.code,
+        title: ke.title,
+        description: ke.description,
+        courseCodes: ke.courseCodes,
+        _count: ke._count,
+        isLocked,
+      };
     });
   }
 
@@ -56,6 +93,45 @@ export class LmsAdminService {
       throw new NotFoundException(`Knowledge Evidence '${id}' not found`);
     }
 
+    const publishedPlanChapters = await this.prisma.learningPlanChapter.findMany({
+      where: { learningPlan: { status: 'PUBLISHED' } },
+      select: { chapterId: true },
+    });
+    const publishedChapterIds = new Set(publishedPlanChapters.map((pc) => pc.chapterId));
+
+    const publishedPlanQuestions = await this.prisma.learningPlanQuestion.findMany({
+      where: { learningPlan: { status: 'PUBLISHED' } },
+      select: { questionId: true },
+    });
+    const publishedQuestionIds = new Set(publishedPlanQuestions.map((pq) => pq.questionId));
+
+    const publishedPlanBanks = await this.prisma.learningPlan.findMany({
+      where: { status: 'PUBLISHED' },
+      select: { questionBanks: { select: { questions: { select: { id: true } } } } },
+    });
+    for (const plan of publishedPlanBanks) {
+      for (const bank of plan.questionBanks) {
+        for (const q of bank.questions) {
+          publishedQuestionIds.add(q.id);
+        }
+      }
+    }
+
+    const ke = await this.prisma.lmsKnowledgeEvidence.findUnique({
+      where: { id },
+      include: {
+        blobs: { select: { chapterId: true } },
+        questions: { select: { id: true } },
+      },
+    });
+
+    const hasPublishedBlob = ke?.blobs.some((b) => b.chapterId && publishedChapterIds.has(b.chapterId));
+    const hasPublishedQuestion = ke?.questions.some((q) => publishedQuestionIds.has(q.id));
+
+    if (hasPublishedBlob || hasPublishedQuestion) {
+      throw new BadRequestException(`Knowledge Evidence '${existing.code}' is locked under a PUBLISHED Learning Plan and cannot be modified.`);
+    }
+
     return this.prisma.lmsKnowledgeEvidence.update({
       where: { id },
       data: {
@@ -73,13 +149,72 @@ export class LmsAdminService {
   }
 
   async deleteKnowledgeEvidence(id: string) {
+    const publishedPlanChapters = await this.prisma.learningPlanChapter.findMany({
+      where: { learningPlan: { status: 'PUBLISHED' } },
+      select: { chapterId: true },
+    });
+    const publishedChapterIds = new Set(publishedPlanChapters.map((pc) => pc.chapterId));
+
+    const publishedPlanQuestions = await this.prisma.learningPlanQuestion.findMany({
+      where: { learningPlan: { status: 'PUBLISHED' } },
+      select: { questionId: true },
+    });
+    const publishedQuestionIds = new Set(publishedPlanQuestions.map((pq) => pq.questionId));
+
+    const publishedPlanBanks = await this.prisma.learningPlan.findMany({
+      where: { status: 'PUBLISHED' },
+      select: { questionBanks: { select: { questions: { select: { id: true } } } } },
+    });
+    for (const plan of publishedPlanBanks) {
+      for (const bank of plan.questionBanks) {
+        for (const q of bank.questions) {
+          publishedQuestionIds.add(q.id);
+        }
+      }
+    }
+
+    const ke = await this.prisma.lmsKnowledgeEvidence.findUnique({
+      where: { id },
+      include: {
+        blobs: { select: { chapterId: true } },
+        questions: { select: { id: true } },
+      },
+    });
+
+    if (!ke) throw new NotFoundException(`Knowledge Evidence '${id}' not found`);
+
+    const hasPublishedBlob = ke.blobs.some((b) => b.chapterId && publishedChapterIds.has(b.chapterId));
+    const hasPublishedQuestion = ke.questions.some((q) => publishedQuestionIds.has(q.id));
+
+    if (hasPublishedBlob || hasPublishedQuestion) {
+      throw new BadRequestException(
+        `Cannot delete Knowledge Evidence '${ke.code}' because it is mapped to content blocks or assessment questions in a PUBLISHED Learning Plan.`,
+      );
+    }
+
     return this.prisma.lmsKnowledgeEvidence.delete({ where: { id } });
   }
 
   // ── Chapters & Content Blocks (Blobs) ────────────────────────────────────────
 
   async getChaptersByCourseCode(courseCodeId?: number) {
-    return this.prisma.lmsChapter.findMany({
+    const publishedPlanChapters = await this.prisma.learningPlanChapter.findMany({
+      where: { learningPlan: { status: 'PUBLISHED' } },
+      select: {
+        chapterId: true,
+        learningPlan: { select: { version: true, courseCode: { select: { code: true } } } },
+      },
+    });
+
+    const publishedMap = new Map<string, string[]>();
+    for (const pc of publishedPlanChapters) {
+      const planLabel = `${pc.learningPlan.courseCode?.code || 'Plan'} (${pc.learningPlan.version})`;
+      const existing = publishedMap.get(pc.chapterId) || [];
+      existing.push(planLabel);
+      publishedMap.set(pc.chapterId, existing);
+    }
+
+    const chapters = await this.prisma.lmsChapter.findMany({
       where: courseCodeId ? { courseCodeId } : undefined,
       orderBy: { sortOrder: 'asc' },
       include: {
@@ -93,6 +228,15 @@ export class LmsAdminService {
           },
         },
       },
+    });
+
+    return chapters.map((ch) => {
+      const publishedPlans = publishedMap.get(ch.id) || [];
+      return {
+        ...ch,
+        isLocked: publishedPlans.length > 0,
+        publishedPlans,
+      };
     });
   }
 
@@ -119,6 +263,16 @@ export class LmsAdminService {
     id: string,
     dto: { title?: string; description?: string; sortOrder?: number },
   ) {
+    const publishedCount = await this.prisma.learningPlanChapter.count({
+      where: { chapterId: id, learningPlan: { status: 'PUBLISHED' } },
+    });
+
+    if (publishedCount > 0) {
+      throw new BadRequestException(
+        'Chapter is attached to a PUBLISHED Learning Plan and is locked. Use "Clone to New Draft Version" on the Learning Plan to make changes.',
+      );
+    }
+
     return this.prisma.lmsChapter.update({
       where: { id },
       data: dto,
@@ -126,6 +280,16 @@ export class LmsAdminService {
   }
 
   async deleteChapter(id: string) {
+    const publishedCount = await this.prisma.learningPlanChapter.count({
+      where: { chapterId: id, learningPlan: { status: 'PUBLISHED' } },
+    });
+
+    if (publishedCount > 0) {
+      throw new BadRequestException(
+        `Cannot delete Chapter because it is attached to a PUBLISHED Learning Plan. Create a new draft plan version or clone first.`,
+      );
+    }
+
     return this.prisma.lmsChapter.delete({ where: { id } });
   }
 
@@ -266,6 +430,37 @@ export class LmsAdminService {
   }
 
   async deleteLearningBlob(id: string) {
+    const blob = await this.prisma.lmsLearningBlob.findUnique({
+      where: { id },
+      include: {
+        chapter: {
+          include: {
+            planChapters: {
+              include: { learningPlan: { select: { status: true } } },
+            },
+          },
+        },
+        coreQuestions: {
+          include: {
+            planQuestions: {
+              include: { learningPlan: { select: { status: true } } },
+            },
+          },
+        },
+      },
+    });
+
+    if (!blob) throw new NotFoundException(`Content Block '${id}' not found`);
+
+    const isLockedInChapter = blob.isLocked || blob.chapter?.planChapters.some((pc) => pc.learningPlan.status === 'PUBLISHED');
+    const isLockedInQuestion = blob.coreQuestions.some((q) => q.planQuestions.some((pq) => pq.learningPlan.status === 'PUBLISHED'));
+
+    if (isLockedInChapter || isLockedInQuestion) {
+      throw new BadRequestException(
+        `Cannot delete Content Block '${blob.title}' because it is part of a PUBLISHED Learning Plan.`,
+      );
+    }
+
     return this.prisma.lmsLearningBlob.delete({ where: { id } });
   }
 
@@ -470,12 +665,22 @@ export class LmsAdminService {
   async deleteQuestion(id: string) {
     const existing = await this.prisma.lmsQuestion.findUnique({
       where: { id },
-      include: { planQuestions: true },
+      include: {
+        planQuestions: {
+          include: { learningPlan: { select: { status: true } } },
+        },
+        questionBanks: {
+          include: { plans: { select: { status: true } } },
+        },
+      },
     });
     if (!existing) throw new NotFoundException(`Question '${id}' not found`);
 
-    if (existing.planQuestions.length > 0) {
-      throw new BadRequestException('Cannot delete question because it is assigned to one or more Learning Plans. Remove it from the plan(s) first.');
+    const isDirectlyPublished = existing.planQuestions.some((pq) => pq.learningPlan.status === 'PUBLISHED');
+    const isBankPublished = existing.questionBanks.some((bank) => bank.plans.some((p) => p.status === 'PUBLISHED'));
+
+    if (isDirectlyPublished || isBankPublished) {
+      throw new BadRequestException('Cannot delete question because it is part of a PUBLISHED Learning Plan.');
     }
 
     return this.prisma.lmsQuestion.delete({ where: { id } });
@@ -484,7 +689,7 @@ export class LmsAdminService {
   // ── Question Banks ────────────────────────────────────────────────────────────
 
   async getQuestionBanks(courseCodeId?: number) {
-    return this.prisma.lmsQuestionBank.findMany({
+    const banks = await this.prisma.lmsQuestionBank.findMany({
       where: courseCodeId ? { courseCodeId } : undefined,
       orderBy: { createdAt: 'desc' },
       include: {
@@ -492,8 +697,23 @@ export class LmsAdminService {
         questions: {
           select: { id: true, questionText: true, type: true, points: true },
         },
+        plans: {
+          select: { id: true, version: true, status: true, courseCode: { select: { code: true } } },
+        },
         _count: { select: { plans: true } },
       },
+    });
+
+    return banks.map((bank) => {
+      const publishedPlans = bank.plans
+        .filter((p) => p.status === 'PUBLISHED')
+        .map((p) => `${p.courseCode?.code || 'Plan'} (${p.version})`);
+
+      return {
+        ...bank,
+        isLocked: publishedPlans.length > 0,
+        publishedPlans,
+      };
     });
   }
 
@@ -546,10 +766,26 @@ export class LmsAdminService {
   }
 
   async deleteQuestionBank(id: string) {
+    const bank = await this.prisma.lmsQuestionBank.findUnique({
+      where: { id },
+      include: { plans: { select: { status: true } } },
+    });
+    if (!bank) throw new NotFoundException(`Question Bank '${id}' not found`);
+
+    if (bank.plans.some((p) => p.status === 'PUBLISHED')) {
+      throw new BadRequestException('Cannot delete Question Bank because it is assigned to a PUBLISHED Learning Plan.');
+    }
+
     return this.prisma.lmsQuestionBank.delete({ where: { id } });
   }
 
   async setPlanQuestionBanks(planId: number, bankIds: string[]) {
+    const plan = await this.prisma.learningPlan.findUnique({ where: { id: planId } });
+    if (!plan) throw new NotFoundException(`Learning plan '${planId}' not found`);
+    if (plan.status === 'PUBLISHED') {
+      throw new BadRequestException('Published learning plans are locked and read-only. Clone to a new draft version to make modifications.');
+    }
+
     await this.prisma.learningPlan.update({
       where: { id: planId },
       data: {
@@ -874,6 +1110,12 @@ export class LmsAdminService {
     planId: number,
     questionItems: Array<{ questionId: string; sortOrder: number; points?: number }>,
   ) {
+    const plan = await this.prisma.learningPlan.findUnique({ where: { id: planId } });
+    if (!plan) throw new NotFoundException(`Learning plan '${planId}' not found`);
+    if (plan.status === 'PUBLISHED') {
+      throw new BadRequestException('Published learning plans are locked and read-only. Clone to a new draft version to make modifications.');
+    }
+
     // Clear existing questions for this plan and rebuild
     await this.prisma.learningPlanQuestion.deleteMany({
       where: { learningPlanId: planId },
@@ -905,6 +1147,12 @@ export class LmsAdminService {
     planId: number,
     chapterItems: Array<{ chapterId: string; sortOrder: number }>,
   ) {
+    const plan = await this.prisma.learningPlan.findUnique({ where: { id: planId } });
+    if (!plan) throw new NotFoundException(`Learning plan '${planId}' not found`);
+    if (plan.status === 'PUBLISHED') {
+      throw new BadRequestException('Published learning plans are locked and read-only. Clone to a new draft version to make modifications.');
+    }
+
     // Clear existing chapters for this plan and rebuild
     await this.prisma.learningPlanChapter.deleteMany({
       where: { learningPlanId: planId },

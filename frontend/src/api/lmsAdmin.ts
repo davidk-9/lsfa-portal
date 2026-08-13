@@ -6,6 +6,8 @@ export interface KnowledgeEvidence {
   title: string;
   description?: string;
   courseCodes?: Array<{ id: number; code: string; name: string }>;
+  isLocked?: boolean;
+  publishedPlans?: string[];
   _count?: { blobs: number; questions: number };
 }
 
@@ -17,6 +19,8 @@ export interface Chapter {
   sortOrder: number;
   courseCode?: { id: number; code: string; name: string };
   blobs?: LearningBlob[];
+  isLocked?: boolean;
+  publishedPlans?: string[];
 }
 
 export interface LearningBlob {
@@ -60,6 +64,8 @@ export interface QuestionBank {
   courseCodeId?: number | null;
   courseCode?: { id: number; code: string; name: string };
   questions?: Array<{ id: string; questionText: string; type: number; points?: number }>;
+  isLocked?: boolean;
+  publishedPlans?: string[];
   _count?: { plans: number };
 }
 

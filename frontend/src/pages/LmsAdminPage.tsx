@@ -253,8 +253,9 @@ export function LmsAdminPage() {
     try {
       await lmsAdminApi.deleteKE(id);
       await loadKEs();
+      setMessage('Knowledge Evidence deleted');
     } catch (err: any) {
-      alert(`Error deleting KE: ${err.message}`);
+      alert(`Error deleting KE: ${err.response?.data?.message || err.message}`);
     }
   };
 
@@ -300,13 +301,14 @@ export function LmsAdminPage() {
   };
 
   const handleDeleteChapter = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this Chapter and its content blocks?')) return;
+    if (!confirm('Are you sure you want to delete this Chapter?')) return;
     try {
       await lmsAdminApi.deleteChapter(id);
       await loadChapters();
       await loadBlobs();
+      setMessage('Chapter deleted');
     } catch (err: any) {
-      alert(`Error deleting Chapter: ${err.message}`);
+      alert(`Error deleting Chapter: ${err.response?.data?.message || err.message}`);
     }
   };
 
@@ -368,8 +370,9 @@ export function LmsAdminPage() {
       await lmsAdminApi.deleteBlob(id);
       await loadBlobs();
       await loadChapters();
+      setMessage('Content Block deleted');
     } catch (err: any) {
-      alert(`Error deleting Content Block: ${err.message}`);
+      alert(`Error deleting Content Block: ${err.response?.data?.message || err.message}`);
     }
   };
 
@@ -421,7 +424,7 @@ export function LmsAdminPage() {
       await loadQuestionBanks();
       setMessage('Question Bank deleted');
     } catch (err: any) {
-      alert(`Error deleting Question Bank: ${err.message}`);
+      alert(`Error deleting Question Bank: ${err.response?.data?.message || err.message}`);
     }
   };
 
@@ -601,8 +604,9 @@ export function LmsAdminPage() {
     try {
       await lmsAdminApi.deleteQuestion(id);
       await loadQuestions();
+      setMessage('Question deleted');
     } catch (err: any) {
-      alert(`Error deleting question: ${err.message}`);
+      alert(`Error deleting question: ${err.response?.data?.message || err.message}`);
     }
   };
 
@@ -839,7 +843,14 @@ export function LmsAdminPage() {
               <tbody>
                 {kes.map((ke) => (
                   <tr key={ke.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '12px 16px', fontWeight: 700, color: '#1e3a8a' }}>{ke.code}</td>
+                    <td style={{ padding: '12px 16px', fontWeight: 700, color: '#1e3a8a' }}>
+                      {ke.code}
+                      {ke.isLocked && (
+                        <span style={{ marginLeft: 6, padding: '2px 6px', backgroundColor: '#fef3c7', color: '#92400e', borderRadius: 4, fontSize: 11, fontWeight: 600, border: '1px solid #fde68a' }} title="Mapped to published content/questions">
+                          🔒 Published
+                        </span>
+                      )}
+                    </td>
                     <td style={{ padding: '12px 16px' }}>
                       <div style={{ fontWeight: 600 }}>{ke.title}</div>
                       <div style={{ color: '#64748b', fontSize: 13 }}>{ke.description}</div>
@@ -1022,6 +1033,11 @@ export function LmsAdminPage() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid #f1f5f9' }}>
                       <div>
                         <span style={{ fontSize: 13, fontWeight: 700, color: '#2563eb', textTransform: 'uppercase' }}>Chapter {idx + 1}</span>
+                        {ch.isLocked && (
+                          <span style={{ marginLeft: 8, padding: '2px 8px', backgroundColor: '#fef3c7', color: '#92400e', borderRadius: 4, fontSize: 11, fontWeight: 700, border: '1px solid #fde68a' }} title={`Published plans: ${ch.publishedPlans?.join(', ')}`}>
+                            🔒 Published ({ch.publishedPlans?.length})
+                          </span>
+                        )}
                         <h3 style={{ fontSize: 18, fontWeight: 700, margin: '2px 0 0 0', color: '#0f172a' }}>{ch.title}</h3>
                         {ch.description && <p style={{ margin: '4px 0 0 0', fontSize: 13, color: '#64748b' }}>{ch.description}</p>}
                       </div>
@@ -1119,7 +1135,14 @@ export function LmsAdminPage() {
                   <div key={bank.id} style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 8, padding: 18, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                     <div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                        <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: '#0f172a' }}>🏦 {bank.name}</h3>
+                        <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: '#0f172a' }}>
+                          🏦 {bank.name}
+                          {bank.isLocked && (
+                            <span style={{ marginLeft: 6, padding: '2px 6px', backgroundColor: '#fef3c7', color: '#92400e', borderRadius: 4, fontSize: 11, fontWeight: 700, border: '1px solid #fde68a' }} title={`Published plans: ${bank.publishedPlans?.join(', ')}`}>
+                              🔒 Published
+                            </span>
+                          )}
+                        </h3>
                         {bank.courseCode && (
                           <span style={{ padding: '2px 8px', backgroundColor: '#eff6ff', color: '#1e40af', borderRadius: 4, fontSize: 12, fontWeight: 700 }}>
                             {bank.courseCode.code}
