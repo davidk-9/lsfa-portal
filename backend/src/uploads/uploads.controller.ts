@@ -193,6 +193,7 @@ export class UploadsController {
 
     const proxyKey = randomBytes(9).toString('base64url');
     const proxyUrl = await this.buildProxyUrl(proxyKey);
+    const relativeProxyUrl = `/proxy/${encodeURIComponent(proxyKey)}`;
 
     await this.prisma.workshopUpload.create({
       data: {
@@ -209,7 +210,7 @@ export class UploadsController {
       },
     });
 
-    return { url: proxyUrl, directUrl: url };
+    return { url: relativeProxyUrl, directUrl: url };
   }
 
   // ── Delete a file ────────────────────────────────────────────────────────────

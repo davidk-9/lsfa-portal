@@ -24,6 +24,7 @@ export function LmsRichTextEditor({ content, onChange, readOnly = false }: LmsRi
     extensions: [
       StarterKit.configure({
         heading: { levels: [2, 3, 4] },
+        link: false,
       }),
       Image.configure({
         inline: true,

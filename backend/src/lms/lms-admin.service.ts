@@ -320,6 +320,7 @@ export class LmsAdminService {
 
     return blobs.map((b) => ({
       ...b,
+      contentHtml: b.contentHtml ? b.contentHtml.replace(/https?:\/\/[^\/]+\/proxy\//g, '/proxy/') : b.contentHtml,
       isLocked: b.isLocked || (b.chapterId ? publishedChapterIds.has(b.chapterId) : false),
     }));
   }
@@ -595,7 +596,8 @@ export class LmsAdminService {
             );
 
             const proxyKey = randomBytes(9).toString('base64url');
-            const proxyUrl = `${base}/proxy/${encodeURIComponent(proxyKey)}`;
+            const durableProxyUrl = `${base}/proxy/${encodeURIComponent(proxyKey)}`;
+            const relativeProxyUrl = `/proxy/${encodeURIComponent(proxyKey)}`;
 
             await this.prisma.workshopUpload.create({
               data: {
@@ -603,7 +605,7 @@ export class LmsAdminService {
                 contactId: null,
                 portfolioTypeId: null,
                 blobPath,
-                blobUrl: proxyUrl,
+                blobUrl: durableProxyUrl,
                 kind: 'image',
                 filename,
                 mimeType: contentType,
@@ -612,7 +614,7 @@ export class LmsAdminService {
               },
             });
 
-            $img.attr('src', proxyUrl);
+            $img.attr('src', relativeProxyUrl);
             migratedImagesCount++;
           } catch (err: any) {
             // Keep original src if download/upload fails
@@ -653,6 +655,7 @@ export class LmsAdminService {
     });
 
     let cleanedHtml = $.html().trim();
+    cleanedHtml = cleanedHtml.replace(/https?:\/\/[^\/]+\/proxy\//g, '/proxy/');
 
     return {
       title: extractedTitle || 'Imported Axcelerate Block',

@@ -161,6 +161,7 @@ export class LmsService {
 
         return {
           ...b,
+          contentHtml: b.contentHtml ? b.contentHtml.replace(/https?:\/\/[^\/]+\/proxy\//g, '/proxy/') : b.contentHtml,
           status,
         };
       }),
