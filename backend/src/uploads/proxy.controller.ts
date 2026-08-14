@@ -9,14 +9,14 @@ import { AzureStorageService } from '../azure-storage/azure-storage.service';
 // the form {PUBLIC_BASE_URL}/proxy/{proxyKey}. It never changes. On each request
 // we look up the blob by its proxy key and 302-redirect to a freshly minted,
 // short-lived SAS link, so the durable proxy URL never rots as SAS tokens expire.
-@Controller('proxy')
+@Controller()
 export class ProxyController {
   constructor(
     private prisma: PrismaService,
     private azure: AzureStorageService,
   ) {}
 
-  @Get(':proxyKey')
+  @Get(['proxy/:proxyKey', 'api/proxy/:proxyKey'])
   async resolve(@Param('proxyKey') proxyKey: string, @Res() res: Response) {
     const row = await this.prisma.workshopUpload.findUnique({ where: { proxyKey } });
 

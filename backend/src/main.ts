@@ -10,10 +10,13 @@ async function bootstrap() {
   app.use(json({ limit: '50mb' }));
   app.use(urlencoded({ limit: '50mb', extended: true }));
 
-  // Everything is under /api except the public file proxy, which must live at
-  // the site root so the URL stored in Axcelerate is a clean {domain}/proxy/{key}.
+  // Everything is under /api except the public file proxy, which can live at
+  // /proxy/{key} or /api/proxy/{key} for full compatibility.
   app.setGlobalPrefix('api', {
-    exclude: [{ path: 'proxy/:proxyKey', method: RequestMethod.GET }],
+    exclude: [
+      { path: 'proxy/:proxyKey', method: RequestMethod.GET },
+      { path: 'api/proxy/:proxyKey', method: RequestMethod.GET },
+    ],
   });
   app.enableCors({
     origin: ['http://localhost:5173'],

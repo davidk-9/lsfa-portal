@@ -320,7 +320,7 @@ export class LmsAdminService {
 
     return blobs.map((b) => ({
       ...b,
-      contentHtml: b.contentHtml ? b.contentHtml.replace(/https?:\/\/[^\/]+\/proxy\//g, '/proxy/') : b.contentHtml,
+      contentHtml: b.contentHtml ? b.contentHtml.replace(/(?:https?:\/\/[^\/]+)?(?:\/api)?\/proxy\//g, '/api/proxy/') : b.contentHtml,
       isLocked: b.isLocked || (b.chapterId ? publishedChapterIds.has(b.chapterId) : false),
     }));
   }
@@ -597,7 +597,7 @@ export class LmsAdminService {
 
             const proxyKey = randomBytes(9).toString('base64url');
             const durableProxyUrl = `${base}/proxy/${encodeURIComponent(proxyKey)}`;
-            const relativeProxyUrl = `/proxy/${encodeURIComponent(proxyKey)}`;
+            const relativeProxyUrl = `/api/proxy/${encodeURIComponent(proxyKey)}`;
 
             await this.prisma.workshopUpload.create({
               data: {
@@ -655,7 +655,7 @@ export class LmsAdminService {
     });
 
     let cleanedHtml = $.html().trim();
-    cleanedHtml = cleanedHtml.replace(/https?:\/\/[^\/]+\/proxy\//g, '/proxy/');
+    cleanedHtml = cleanedHtml.replace(/(?:https?:\/\/[^\/]+)?(?:\/api)?\/proxy\//g, '/api/proxy/');
 
     return {
       title: extractedTitle || 'Imported Axcelerate Block',
