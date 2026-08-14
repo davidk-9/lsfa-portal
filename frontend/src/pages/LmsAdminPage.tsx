@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { lmsAdminApi, type KnowledgeEvidence, type Chapter, type LearningBlob, type QuestionBankItem, type QuestionBank, type LearningPlan } from '../api/lmsAdmin';
 import { settingsApi } from '../api';
 import { QuestionType } from '../lms/types/lms';
@@ -31,6 +32,7 @@ function parseVideoInput(val: string): { azureBlobUrl: string; vimeoId: string }
 }
 
 export function LmsAdminPage() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'ke' | 'content' | 'questions' | 'plans'>('ke');
   const [contentSubTab, setContentSubTab] = useState<'blobs' | 'chapters'>('blobs');
   const [questionSubTab, setQuestionSubTab] = useState<'banks' | 'questions'>('banks');
@@ -39,6 +41,11 @@ export function LmsAdminPage() {
   const [, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [publishingError, setPublishingError] = useState<string | null>(null);
+
+  // Axcelerate Import modal state
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importHtmlText, setImportHtmlText] = useState('');
+  const [importing, setImporting] = useState(false);
 
   // Data states
   const [kes, setKes] = useState<KnowledgeEvidence[]>([]);
@@ -348,31 +355,38 @@ export function LmsAdminPage() {
 
   const handleOpenBlobModal = (chapterId: string, blob?: LearningBlob) => {
     if (blob) {
-      setBlobForm({
-        chapterId: blob.chapterId || chapterId || '',
-        knowledgeEvidenceIds: blob.knowledgeEvidences?.map((k) => k.id) || [],
-        title: blob.title,
-        description: blob.description || '',
-        contentHtml: blob.contentHtml || '',
-        vimeoId: blob.vimeoId || '',
-        azureBlobUrl: blob.azureBlobUrl || '',
-        durationSeconds: blob.durationSeconds || 0,
-        sortOrder: blob.sortOrder || 0,
-      });
-      setBlobModal({ open: true, chapterId: blob.chapterId || chapterId, item: blob });
+      navigate(`/lms-admin/blocks/${blob.id}/edit`);
     } else {
-      setBlobForm({
-        chapterId,
-        knowledgeEvidenceIds: [],
-        title: '',
-        description: '',
-        contentHtml: '',
-        vimeoId: '',
-        azureBlobUrl: '',
-        durationSeconds: 180,
-        sortOrder: blobs.length + 1,
+      navigate(`/lms-admin/blocks/new${chapterId ? `?chapterId=${chapterId}` : ''}`);
+    }
+  };
+
+  const handleImportAxcelerate = async () => {
+    if (!importHtmlText.trim()) {
+      alert('Please paste Axcelerate HTML code first');
+      return;
+    }
+
+    setImporting(true);
+    try {
+      const res = await lmsAdminApi.importAxcelerateHtml(importHtmlText);
+      const data = res.data;
+
+      setImportModalOpen(false);
+      setImportHtmlText('');
+
+      navigate('/lms-admin/blocks/new', {
+        state: {
+          importedTitle: data.title,
+          importedVimeoId: data.vimeoId,
+          importedContentHtml: data.contentHtml,
+          importedCount: data.migratedImagesCount,
+        },
       });
-      setBlobModal({ open: true, chapterId, item: null });
+    } catch (err: any) {
+      alert(`Error importing Axcelerate HTML: ${err?.response?.data?.message || err.message}`);
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -952,13 +966,22 @@ export function LmsAdminPage() {
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                 <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Atomic Content Blocks (Blobs)</h2>
-                <button
-                  type="button"
-                  onClick={() => handleOpenBlobModal('')}
-                  style={{ padding: '8px 16px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}
-                >
-                  + Create Content Block
-                </button>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button
+                    type="button"
+                    onClick={() => setImportModalOpen(true)}
+                    style={{ padding: '8px 16px', backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    📥 Import Axcelerate HTML
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/lms-admin/blocks/new')}
+                    style={{ padding: '8px 16px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    + Create Content Block
+                  </button>
+                </div>
               </div>
 
               <div style={{ backgroundColor: '#ffffff', borderRadius: 8, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
@@ -2440,6 +2463,46 @@ export function LmsAdminPage() {
                 style={{ padding: '8px 20px', backgroundColor: '#2563eb', color: '#ffffff', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}
               >
                 Close Preview
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: Import Axcelerate HTML ────────────────────────────────────────── */}
+      {importModalOpen && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ backgroundColor: '#ffffff', borderRadius: 10, padding: 24, maxWidth: 700, width: '90%', maxHeight: '90vh', overflowY: 'auto', border: '1px solid #cbd5e1' }}>
+            <h3 style={{ margin: '0 0 12px 0', fontSize: 18, fontWeight: 700, color: '#0f172a' }}>
+              📥 Import & Sanitize Axcelerate HTML Content Block
+            </h3>
+            <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 16px 0' }}>
+              Paste raw HTML code copied from Axcelerate. The backend will automatically strip internal class names, remove `contenteditable` flags, extract Vimeo video embeds, download embedded images, and upload them directly to Azure Storage!
+            </p>
+
+            <textarea
+              rows={12}
+              placeholder="Paste raw Axcelerate HTML block code here..."
+              value={importHtmlText}
+              onChange={(e) => setImportHtmlText(e.target.value)}
+              style={{ width: '100%', padding: 12, borderRadius: 6, border: '1px solid #cbd5e1', fontFamily: 'monospace', fontSize: 12, lineHeight: 1.4 }}
+            />
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+              <button
+                type="button"
+                onClick={() => setImportModalOpen(false)}
+                style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid #ccc', background: '#ffffff', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleImportAxcelerate}
+                disabled={importing || !importHtmlText.trim()}
+                style={{ padding: '8px 20px', backgroundColor: '#2563eb', color: '#ffffff', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}
+              >
+                {importing ? 'Sanitizing & Migrating Assets...' : 'Sanitize & Migrate to Azure'}
               </button>
             </div>
           </div>

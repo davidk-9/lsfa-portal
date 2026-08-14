@@ -172,6 +172,46 @@ export class UploadsController {
     return { success: true, uploadId: row.id, url: proxyUrl, proxyKey };
   }
 
+  // ── Upload an LMS asset (images for rich text editor / content blocks) ─────────
+
+  @Post('lms-asset')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadLmsAsset(@UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('No file provided');
+
+    const enabled = await this.azure.isEnabled();
+    if (!enabled) throw new BadRequestException('Azure Storage is not enabled. Please configure Azure Storage in Settings.');
+
+    const safeName = file.originalname || 'image.png';
+    const { blobPath, url } = await this.azure.uploadFile(
+      file.buffer,
+      safeName,
+      file.mimetype || 'image/png',
+      'lms',
+      'assets',
+    );
+
+    const proxyKey = randomBytes(9).toString('base64url');
+    const proxyUrl = await this.buildProxyUrl(proxyKey);
+
+    await this.prisma.workshopUpload.create({
+      data: {
+        instanceId: 0,
+        contactId: null,
+        portfolioTypeId: null,
+        blobPath,
+        blobUrl: proxyUrl,
+        kind: 'image',
+        filename: safeName,
+        mimeType: file.mimetype || 'image/png',
+        status: 'active',
+        proxyKey,
+      },
+    });
+
+    return { url: proxyUrl, directUrl: url };
+  }
+
   // ── Delete a file ────────────────────────────────────────────────────────────
 
   @Delete(':id')

@@ -1,0 +1,328 @@
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import { Image } from '@tiptap/extension-image';
+import { Table } from '@tiptap/extension-table';
+import { TableRow } from '@tiptap/extension-table-row';
+import { TableHeader } from '@tiptap/extension-table-header';
+import { TableCell } from '@tiptap/extension-table-cell';
+import { Link } from '@tiptap/extension-link';
+import { useEffect, useRef, useState } from 'react';
+import { lmsAdminApi } from '../api/lmsAdmin';
+
+interface LmsRichTextEditorProps {
+  content: string;
+  onChange: (html: string) => void;
+  placeholder?: string;
+  readOnly?: boolean;
+}
+
+export function LmsRichTextEditor({ content, onChange, readOnly = false }: LmsRichTextEditorProps) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  const editor = useEditor({
+    extensions: [
+      StarterKit.configure({
+        heading: { levels: [2, 3, 4] },
+      }),
+      Image.configure({
+        inline: true,
+        allowBase64: true,
+      }),
+      Table.configure({
+        resizable: true,
+      }),
+      TableRow,
+      TableHeader,
+      TableCell,
+      Link.configure({
+        openOnClick: false,
+        HTMLAttributes: {
+          target: '_blank',
+          rel: 'noopener noreferrer',
+        },
+      }),
+    ],
+    content: content || '',
+    editable: !readOnly,
+    onUpdate: ({ editor }) => {
+      onChange(editor.getHTML());
+    },
+  });
+
+  // Sync content prop when changed externally (e.g. on load or import)
+  useEffect(() => {
+    if (editor && content !== editor.getHTML()) {
+      editor.commands.setContent(content || '');
+    }
+  }, [content, editor]);
+
+  // Handle Drag & Drop image files or Clipboard Paste image files directly on the editor
+  useEffect(() => {
+    if (!editor || readOnly) return;
+
+    const handlePaste = async (event: ClipboardEvent) => {
+      const items = event.clipboardData?.items;
+      if (!items) return;
+
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type.indexOf('image') !== -1) {
+          event.preventDefault();
+          const file = item.getAsFile();
+          if (file) {
+            await handleUploadAndInsertImage(file);
+          }
+          break;
+        }
+      }
+    };
+
+    const dom = editor.view.dom;
+    dom.addEventListener('paste', handlePaste);
+    return () => {
+      dom.removeEventListener('paste', handlePaste);
+    };
+  }, [editor, readOnly]);
+
+  const handleUploadAndInsertImage = async (file: File) => {
+    if (!editor) return;
+    setUploadingImage(true);
+    try {
+      const res = await lmsAdminApi.uploadLmsAsset(file);
+      const imageUrl = res.data.url;
+      editor.chain().focus().setImage({ src: imageUrl }).run();
+    } catch (err: any) {
+      alert(`Error uploading image to Azure Storage: ${err?.response?.data?.message || err.message}`);
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      await handleUploadAndInsertImage(file);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const setLink = () => {
+    if (!editor) return;
+    const previousUrl = editor.getAttributes('link').href;
+    const url = window.prompt('URL', previousUrl);
+
+    if (url === null) return;
+    if (url === '') {
+      editor.chain().focus().extendMarkRange('link').unsetLink().run();
+      return;
+    }
+
+    editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+  };
+
+  const addCalloutBox = (type: 'info' | 'success' | 'warning') => {
+    if (!editor) return;
+    const colors = {
+      info: { bg: '#eff6ff', border: '#2563eb', title: 'Note:' },
+      success: { bg: '#f0fdf4', border: '#16a34a', title: 'Important:' },
+      warning: { bg: '#fffbe3', border: '#d97706', title: 'Warning:' },
+    }[type];
+
+    const calloutHtml = `<div style="padding: 12px 16px; background-color: ${colors.bg}; border-left: 4px solid ${colors.border}; border-radius: 4px; margin: 12px 0;"><strong>${colors.title}</strong> Add callout text here...</div><p></p>`;
+    editor.chain().focus().insertContent(calloutHtml).run();
+  };
+
+  if (!editor) return null;
+
+  return (
+    <div style={{ border: '1px solid #cbd5e1', borderRadius: 8, overflow: 'hidden', backgroundColor: '#ffffff' }}>
+      {/* Hidden File Input for Image Uploads */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileSelect}
+        accept="image/*"
+        style={{ display: 'none' }}
+      />
+
+      {/* Toolbar */}
+      {!readOnly && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, padding: '8px 12px', backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', alignItems: 'center' }}>
+          {/* Headings */}
+          <button
+            type="button"
+            onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+            style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #cbd5e1', backgroundColor: editor.isActive('heading', { level: 2 }) ? '#e2e8f0' : '#ffffff', fontWeight: 'bold', fontSize: 12, cursor: 'pointer' }}
+            title="Heading 2"
+          >
+            H2
+          </button>
+          <button
+            type="button"
+            onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+            style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #cbd5e1', backgroundColor: editor.isActive('heading', { level: 3 }) ? '#e2e8f0' : '#ffffff', fontWeight: 'bold', fontSize: 12, cursor: 'pointer' }}
+            title="Heading 3"
+          >
+            H3
+          </button>
+
+          <span style={{ color: '#cbd5e1', margin: '0 2px' }}>|</span>
+
+          {/* Inline Formats */}
+          <button
+            type="button"
+            onClick={() => editor.chain().focus().toggleBold().run()}
+            style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #cbd5e1', backgroundColor: editor.isActive('bold') ? '#e2e8f0' : '#ffffff', fontWeight: 'bold', fontSize: 12, cursor: 'pointer' }}
+            title="Bold"
+          >
+            B
+          </button>
+          <button
+            type="button"
+            onClick={() => editor.chain().focus().toggleItalic().run()}
+            style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #cbd5e1', backgroundColor: editor.isActive('italic') ? '#e2e8f0' : '#ffffff', fontStyle: 'italic', fontSize: 12, cursor: 'pointer' }}
+            title="Italic"
+          >
+            I
+          </button>
+          <button
+            type="button"
+            onClick={() => editor.chain().focus().toggleStrike().run()}
+            style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #cbd5e1', backgroundColor: editor.isActive('strike') ? '#e2e8f0' : '#ffffff', textDecoration: 'line-through', fontSize: 12, cursor: 'pointer' }}
+            title="Strikethrough"
+          >
+            S
+          </button>
+
+          <span style={{ color: '#cbd5e1', margin: '0 2px' }}>|</span>
+
+          {/* Lists */}
+          <button
+            type="button"
+            onClick={() => editor.chain().focus().toggleBulletList().run()}
+            style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #cbd5e1', backgroundColor: editor.isActive('bulletList') ? '#e2e8f0' : '#ffffff', fontSize: 12, cursor: 'pointer' }}
+            title="Bullet List"
+          >
+            • List
+          </button>
+          <button
+            type="button"
+            onClick={() => editor.chain().focus().toggleOrderedList().run()}
+            style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #cbd5e1', backgroundColor: editor.isActive('orderedList') ? '#e2e8f0' : '#ffffff', fontSize: 12, cursor: 'pointer' }}
+            title="Ordered List"
+          >
+            1. List
+          </button>
+
+          <span style={{ color: '#cbd5e1', margin: '0 2px' }}>|</span>
+
+          {/* Tables */}
+          <button
+            type="button"
+            onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
+            style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #cbd5e1', backgroundColor: '#ffffff', fontSize: 12, cursor: 'pointer' }}
+            title="Insert Table"
+          >
+            📊 Table
+          </button>
+          {editor.isActive('table') && (
+            <>
+              <button type="button" onClick={() => editor.chain().focus().addRowAfter().run()} style={{ padding: '4px 6px', fontSize: 11, cursor: 'pointer' }}>+Row</button>
+              <button type="button" onClick={() => editor.chain().focus().addColumnAfter().run()} style={{ padding: '4px 6px', fontSize: 11, cursor: 'pointer' }}>+Col</button>
+              <button type="button" onClick={() => editor.chain().focus().deleteTable().run()} style={{ padding: '4px 6px', fontSize: 11, color: '#dc2626', cursor: 'pointer' }}>Del Table</button>
+            </>
+          )}
+
+          <span style={{ color: '#cbd5e1', margin: '0 2px' }}>|</span>
+
+          {/* Link */}
+          <button
+            type="button"
+            onClick={setLink}
+            style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #cbd5e1', backgroundColor: editor.isActive('link') ? '#e2e8f0' : '#ffffff', fontSize: 12, cursor: 'pointer' }}
+            title="Link"
+          >
+            🔗 Link
+          </button>
+
+          {/* Callout alert box */}
+          <button
+            type="button"
+            onClick={() => addCalloutBox('info')}
+            style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #bfdbfe', backgroundColor: '#eff6ff', color: '#1d4ed8', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}
+            title="Insert Info Box"
+          >
+            💡 Info Box
+          </button>
+
+          <span style={{ color: '#cbd5e1', margin: '0 2px' }}>|</span>
+
+          {/* Image Upload */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploadingImage}
+            style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid #bbf7d0', backgroundColor: '#f0fdf4', color: '#166534', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}
+            title="Upload image to Azure Storage"
+          >
+            {uploadingImage ? 'Uploading...' : '🖼️ Upload Image'}
+          </button>
+        </div>
+      )}
+
+      {/* Editor Content Area */}
+      <div style={{ padding: '12px 16px', minHeight: 250, maxHeight: 600, overflowY: 'auto' }}>
+        <EditorContent editor={editor} />
+      </div>
+
+      <style>{`
+        .ProseMirror {
+          outline: none;
+          min-height: 220px;
+          font-family: inherit;
+          font-size: 15px;
+          line-height: 1.6;
+        }
+        .ProseMirror p {
+          margin-top: 0;
+          margin-bottom: 0.8em;
+        }
+        .ProseMirror table {
+          border-collapse: collapse;
+          table-layout: fixed;
+          width: 100%;
+          margin: 1em 0;
+          overflow: hidden;
+        }
+        .ProseMirror td, .ProseMirror th {
+          min-width: 1em;
+          border: 1px solid #cbd5e1;
+          padding: 6px 10px;
+          vertical-align: top;
+          box-sizing: border-box;
+          position: relative;
+        }
+        .ProseMirror th {
+          font-weight: bold;
+          text-align: left;
+          background-color: #f1f5f9;
+        }
+        .ProseMirror img {
+          max-width: 100%;
+          height: auto;
+          border-radius: 6px;
+          margin: 8px 0;
+        }
+        .ProseMirror blockquote {
+          border-left: 3px solid #cbd5e1;
+          padding-left: 12px;
+          color: #64748b;
+          margin: 12px 0;
+        }
+      `}</style>
+    </div>
+  );
+}

@@ -1,9 +1,18 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AzureStorageService } from '../azure-storage/azure-storage.service';
+import { SettingsService } from '../settings/settings.service';
+import * as cheerio from 'cheerio';
+import axios from 'axios';
+import { randomBytes } from 'crypto';
 
 @Injectable()
 export class LmsAdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly azure: AzureStorageService,
+    private readonly settings: SettingsService,
+  ) {}
 
   // ── Knowledge Evidence (KE) ──────────────────────────────────────────────────
 
@@ -499,6 +508,158 @@ export class LmsAdminService {
         },
       },
     });
+  }
+
+  async importAxcelerateHtml(rawHtml: string) {
+    if (!rawHtml || !rawHtml.trim()) {
+      throw new BadRequestException('No HTML content provided for import');
+    }
+
+    const $ = cheerio.load(rawHtml, { xmlMode: false }, false);
+
+    // 1. Title Extraction
+    let extractedTitle = '';
+    const h1El = $('h1').first();
+    if (h1El.length > 0) {
+      extractedTitle = h1El.text().trim();
+    }
+    if (!extractedTitle) {
+      const headerBlock = $('.arc-tiny-auth-header-block').first();
+      if (headerBlock.length > 0) {
+        extractedTitle = headerBlock.text().trim();
+      }
+    }
+
+    // Remove the Axcelerate hero header block or SVG illustration if present
+    $('.arc-tiny-auth-header-block').remove();
+    $('svg.arc-header-illustration').remove();
+    $('.arc-header-illustration').remove();
+
+    // 2. Extract Vimeo ID / embed
+    let extractedVimeoId = '';
+    const iframes = $('iframe');
+    iframes.each((_, el) => {
+      const src = $(el).attr('src') || '';
+      if (src.includes('vimeo.com') || /player\.vimeo\.com/i.test(src)) {
+        const match = src.match(/vimeo\.com\/(?:video\/)?([a-zA-Z0-9_\-?=&]+)/i);
+        if (match) {
+          extractedVimeoId = match[1];
+        } else {
+          const idMatch = src.match(/\/video\/([a-zA-Z0-9_\-?=&]+)/i);
+          if (idMatch) extractedVimeoId = idMatch[1];
+        }
+        if ($(el).parent('.paragraph').length > 0) {
+          $(el).parent('.paragraph').remove();
+        } else {
+          $(el).remove();
+        }
+      }
+    });
+
+    if (!extractedVimeoId) {
+      const vimeoMatch = rawHtml.match(/player\.vimeo\.com\/video\/([a-zA-Z0-9_\-?=&]+)/i);
+      if (vimeoMatch) {
+        extractedVimeoId = vimeoMatch[1];
+      }
+    }
+
+    // 3. Image Migration to Azure Storage
+    let migratedImagesCount = 0;
+    const isAzureEnabled = await this.azure.isEnabled();
+    const publicBase = await this.settings.get('public_base_url');
+    const base = (publicBase?.trim() || process.env.PUBLIC_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '');
+
+    const imgs = $('img').toArray();
+    for (const img of imgs) {
+      const $img = $(img);
+      const src = $img.attr('src') || '';
+
+      if (src && (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('//'))) {
+        const fullSrc = src.startsWith('//') ? `https:${src}` : src;
+
+        if (isAzureEnabled) {
+          try {
+            const resp = await axios.get(fullSrc, { responseType: 'arraybuffer', timeout: 12000 });
+            const contentType = String(resp.headers['content-type'] || 'image/png');
+            const buffer = Buffer.from(resp.data);
+
+            const urlPath = new URL(fullSrc).pathname;
+            const filename = urlPath.split('/').pop() || 'imported_image.png';
+
+            const { blobPath } = await this.azure.uploadFile(
+              buffer,
+              filename,
+              contentType,
+              'lms',
+              'axcelerate-imports',
+            );
+
+            const proxyKey = randomBytes(9).toString('base64url');
+            const proxyUrl = `${base}/proxy/${encodeURIComponent(proxyKey)}`;
+
+            await this.prisma.workshopUpload.create({
+              data: {
+                instanceId: 0,
+                contactId: null,
+                portfolioTypeId: null,
+                blobPath,
+                blobUrl: proxyUrl,
+                kind: 'image',
+                filename,
+                mimeType: contentType,
+                status: 'active',
+                proxyKey,
+              },
+            });
+
+            $img.attr('src', proxyUrl);
+            migratedImagesCount++;
+          } catch (err: any) {
+            // Keep original src if download/upload fails
+          }
+        }
+      }
+
+      $img.removeAttr('contenteditable');
+      $img.removeAttr('data-mce-fragment');
+      $img.removeAttr('class');
+    }
+
+    // 4. Clean HTML
+    $('*').removeAttr('contenteditable');
+
+    $('*').each((_, el) => {
+      const $el = $(el);
+      const className = $el.attr('class') || '';
+      if (className) {
+        const cleanedClasses = className
+          .split(/\s+/)
+          .filter((c) => !c.startsWith('sc-') && !c.startsWith('arc-') && !c.startsWith('ax-') && !c.includes('contenteditable'))
+          .join(' ');
+
+        if (cleanedClasses.trim()) {
+          $el.attr('class', cleanedClasses.trim());
+        } else {
+          $el.removeAttr('class');
+        }
+      }
+    });
+
+    $('div.paragraph').each((_, el) => {
+      const $el = $(el);
+      if (!$el.text().trim() && $el.find('img, iframe, svg, table').length === 0) {
+        $el.remove();
+      }
+    });
+
+    let cleanedHtml = $.html().trim();
+
+    return {
+      title: extractedTitle || 'Imported Axcelerate Block',
+      vimeoId: extractedVimeoId,
+      contentHtml: cleanedHtml,
+      migratedImagesCount,
+    };
   }
 
   // ── Question Bank ─────────────────────────────────────────────────────────────

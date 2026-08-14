@@ -114,6 +114,15 @@ export const lmsAdminApi = {
     api.post<Chapter>(`/lms-admin/chapters/${chapterId}/blobs`, { items }),
 
   getBlobs: (chapterId?: string) => api.get<LearningBlob[]>(`/lms-admin/blobs${chapterId ? `?chapterId=${chapterId}` : ''}`),
+  importAxcelerateHtml: (html: string) =>
+    api.post<{ title: string; vimeoId: string; contentHtml: string; migratedImagesCount: number }>('/lms-admin/blobs/import-axcelerate', { html }),
+  uploadLmsAsset: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post<{ url: string; directUrl: string }>('/uploads/lms-asset', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
   createBlob: (data: {
     chapterId?: string;
     knowledgeEvidenceIds?: string[];

@@ -20,6 +20,7 @@ import { WorkshopDetailPage } from './pages/WorkshopDetailPage';
 import { UserProfilePage } from './pages/UserProfilePage';
 import { MyDetailsPage } from './pages/MyDetailsPage';
 import { LmsAdminPage } from './pages/LmsAdminPage';
+import { LmsBlockEditorPage } from './pages/LmsBlockEditorPage';
 
 import { SessionProvider } from './lms/contexts/SessionContext';
 import { LmsHome } from './lms/pages/LmsHome';
@@ -89,6 +90,22 @@ function App() {
               element={
                 <ProtectedRoute allowedRoles={['SUPER_USER', 'ADMIN']}>
                   <LmsAdminPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="lms-admin/blocks/new"
+              element={
+                <ProtectedRoute allowedRoles={['SUPER_USER', 'ADMIN']}>
+                  <LmsBlockEditorPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="lms-admin/blocks/:id/edit"
+              element={
+                <ProtectedRoute allowedRoles={['SUPER_USER', 'ADMIN']}>
+                  <LmsBlockEditorPage />
                 </ProtectedRoute>
               }
             />

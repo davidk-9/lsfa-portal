@@ -89,6 +89,11 @@ export class LmsAdminController {
     return this.lmsAdminService.getBlobs(chapterId);
   }
 
+  @Post('blobs/import-axcelerate')
+  async importAxcelerateHtml(@Body('html') html: string) {
+    return this.lmsAdminService.importAxcelerateHtml(html);
+  }
+
   @Post('blobs')
   async createLearningBlob(
     @Body()
