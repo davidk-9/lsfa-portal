@@ -54,7 +54,8 @@ export function LmsBlockEditorPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  // Axcelerate Importer Modal
+  // Preview and Axcelerate Importer Modals
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [importHtmlText, setImportHtmlText] = useState('');
   const [importing, setImporting] = useState(false);
@@ -231,6 +232,13 @@ export function LmsBlockEditorPage() {
         <div style={{ display: 'flex', gap: 10 }}>
           <button
             type="button"
+            onClick={() => setPreviewModalOpen(true)}
+            style={{ padding: '8px 16px', backgroundColor: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}
+          >
+            👁️ Preview Student View
+          </button>
+          <button
+            type="button"
             onClick={() => setImportModalOpen(true)}
             style={{ padding: '8px 16px', backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}
           >
@@ -253,194 +261,209 @@ export function LmsBlockEditorPage() {
         </div>
       )}
 
-      {/* Split Screen Layout */}
-      <div style={{ display: 'grid', gridTemplateColumns: '58% 42%', gap: 20, alignItems: 'start' }}>
-        {/* Left Side: Authoring Controls & Editor */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {/* Metadata Block */}
-          <div style={{ backgroundColor: '#ffffff', borderRadius: 10, border: '1px solid #e2e8f0', padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: '#1e293b', borderBottom: '1px solid #f1f5f9', paddingBottom: 10 }}>
-              Block Metadata & Mapping
-            </h2>
+      {/* Editor Main Centered Area */}
+      <div style={{ maxWidth: 900, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+        {/* Metadata Block */}
+        <div style={{ backgroundColor: '#ffffff', borderRadius: 10, border: '1px solid #e2e8f0', padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: '#1e293b', borderBottom: '1px solid #f1f5f9', paddingBottom: 10 }}>
+            Block Metadata & Mapping
+          </h2>
+
+          <label>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Block Title:</div>
+            <input
+              type="text"
+              placeholder="e.g. DRSABCD & Primary Assessment Protocols"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 14 }}
+            />
+          </label>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <label>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Assign to Chapter (Optional):</div>
+              <select
+                value={chapterId}
+                onChange={(e) => setChapterId(e.target.value)}
+                style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 14 }}
+              >
+                <option value="">Unassigned (Standalone Block)</option>
+                {chapters.map((ch) => (
+                  <option key={ch.id} value={ch.id}>
+                    📖 {ch.title}
+                  </option>
+                ))}
+              </select>
+            </label>
 
             <label>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Block Title:</div>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Estimated Reading Time (seconds):</div>
               <input
-                type="text"
-                placeholder="e.g. DRSABCD & Primary Assessment Protocols"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                type="number"
+                min={30}
+                value={durationSeconds}
+                onChange={(e) => setDurationSeconds(Number(e.target.value))}
                 style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 14 }}
               />
             </label>
+          </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <label>
-                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Assign to Chapter (Optional):</div>
-                <select
-                  value={chapterId}
-                  onChange={(e) => setChapterId(e.target.value)}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 14 }}
-                >
-                  <option value="">Unassigned (Standalone Block)</option>
-                  {chapters.map((ch) => (
-                    <option key={ch.id} value={ch.id}>
-                      📖 {ch.title}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Estimated Reading Time (seconds):</div>
-                <input
-                  type="number"
-                  min={30}
-                  value={durationSeconds}
-                  onChange={(e) => setDurationSeconds(Number(e.target.value))}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 14 }}
-                />
-              </label>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Mapped Knowledge Evidences (KEs):</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10, border: '1px solid #cbd5e1', borderRadius: 6, maxHeight: 140, overflowY: 'auto', backgroundColor: '#f8fafc' }}>
+              {kes.map((k) => {
+                const isChecked = knowledgeEvidenceIds.includes(k.id);
+                return (
+                  <label key={k.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setKnowledgeEvidenceIds([...knowledgeEvidenceIds, k.id]);
+                        } else {
+                          setKnowledgeEvidenceIds(knowledgeEvidenceIds.filter((id) => id !== k.id));
+                        }
+                      }}
+                    />
+                    <span><strong>{k.code}</strong> &ndash; {k.title}</span>
+                  </label>
+                );
+              })}
             </div>
+          </div>
 
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Mapped Knowledge Evidences (KEs):</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10, border: '1px solid #cbd5e1', borderRadius: 6, maxHeight: 140, overflowY: 'auto', backgroundColor: '#f8fafc' }}>
-                {kes.map((k) => {
-                  const isChecked = knowledgeEvidenceIds.includes(k.id);
-                  return (
-                    <label key={k.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setKnowledgeEvidenceIds([...knowledgeEvidenceIds, k.id]);
-                          } else {
-                            setKnowledgeEvidenceIds(knowledgeEvidenceIds.filter((id) => id !== k.id));
-                          }
-                        }}
-                      />
-                      <span><strong>{k.code}</strong> &ndash; {k.title}</span>
-                    </label>
-                  );
-                })}
+          <label>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Azure Blob Video URL / Vimeo Embed / Vimeo ID:</div>
+            <input
+              type="text"
+              placeholder="Paste Vimeo ID (e.g. 918974090?h=709bcc1633), iframe embed code, or Azure MP4 URL"
+              value={vimeoId || azureBlobUrl}
+              onChange={(e) => {
+                const parsed = parseVideoInput(e.target.value);
+                setAzureBlobUrl(parsed.azureBlobUrl);
+                setVimeoId(parsed.vimeoId);
+              }}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 14 }}
+            />
+            {(vimeoId || azureBlobUrl) && (
+              <div style={{ fontSize: 12, color: '#2563eb', marginTop: 4, fontWeight: 600 }}>
+                {vimeoId ? `✓ Detected Vimeo ID: ${vimeoId}` : `✓ Detected Direct Video URL: ${azureBlobUrl}`}
               </div>
-            </div>
+            )}
+          </label>
 
-            <label>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Azure Blob Video URL / Vimeo Embed / Vimeo ID:</div>
-              <input
-                type="text"
-                placeholder="Paste Vimeo ID (e.g. 918974090?h=709bcc1633), iframe embed code, or Azure MP4 URL"
-                value={vimeoId || azureBlobUrl}
-                onChange={(e) => {
-                  const parsed = parseVideoInput(e.target.value);
-                  setAzureBlobUrl(parsed.azureBlobUrl);
-                  setVimeoId(parsed.vimeoId);
-                }}
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 14 }}
-              />
-              {(vimeoId || azureBlobUrl) && (
-                <div style={{ fontSize: 12, color: '#2563eb', marginTop: 4, fontWeight: 600 }}>
-                  {vimeoId ? `✓ Detected Vimeo ID: ${vimeoId}` : `✓ Detected Direct Video URL: ${azureBlobUrl}`}
-                </div>
-              )}
-            </label>
-
-            <label>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Block Summary / Description:</div>
-              <textarea
-                rows={2}
-                placeholder="Brief summary shown to students in module overview..."
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
-              />
-            </label>
-          </div>
-
-          {/* TipTap Rich Text Editor */}
-          <div style={{ backgroundColor: '#ffffff', borderRadius: 10, border: '1px solid #e2e8f0', padding: 20 }}>
-            <h2 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 12px 0', color: '#1e293b' }}>
-              Rich Text & Graphical HTML Content (TipTap Authoring)
-            </h2>
-            <LmsRichTextEditor content={contentHtml} onChange={(html) => setContentHtml(html)} />
-          </div>
+          <label>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Block Summary / Description:</div>
+            <textarea
+              rows={2}
+              placeholder="Brief summary shown to students in module overview..."
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
+            />
+          </label>
         </div>
 
-        {/* Right Side: Live Student View Replica */}
-        <div style={{ position: 'sticky', top: 20, backgroundColor: '#ffffff', borderRadius: 10, border: '1px solid #e2e8f0', padding: 20, boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, borderBottom: '1px solid #f1f5f9', paddingBottom: 10 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#2563eb', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              👁️ Real-Time Student View Replica
-            </span>
-            <span style={{ fontSize: 11, padding: '2px 8px', backgroundColor: '#f1f5f9', borderRadius: 12, color: '#64748b' }}>
-              Student Portal View
-            </span>
-          </div>
-
-          <div style={{ padding: '1.25rem', border: '1px solid #e2e8f0', borderRadius: 8, backgroundColor: '#fafafa' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-              <div>
-                <span style={{ fontSize: 12, fontWeight: 700, color: '#2563eb', textTransform: 'uppercase' }}>Reading Module</span>
-                <h3 style={{ margin: '2px 0 0 0', fontSize: 18, fontWeight: 700, color: '#0f172a' }}>
-                  📦 {title || 'Untitled Block'}
-                </h3>
-              </div>
-            </div>
-
-            {/* Mapped KE Badges */}
-            {knowledgeEvidenceIds.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
-                {knowledgeEvidenceIds.map((kId) => {
-                  const kObj = kes.find((k) => k.id === kId);
-                  return (
-                    <span key={kId} style={{ padding: '2px 8px', backgroundColor: '#eff6ff', color: '#1e40af', borderRadius: 4, fontSize: 11, fontWeight: 600, border: '1px solid #bfdbfe' }}>
-                      KE: {kObj?.code || 'KE'}
-                    </span>
-                  );
-                })}
-              </div>
-            )}
-
-            {description && (
-              <p style={{ fontSize: '0.92rem', color: '#475569', marginTop: 0, marginBottom: '1rem', fontStyle: 'italic' }}>
-                {description}
-              </p>
-            )}
-
-            {/* Rendered HTML Content */}
-            {contentHtml ? (
-              <div
-                dangerouslySetInnerHTML={{ __html: contentHtml }}
-                style={{
-                  padding: '1.25rem',
-                  backgroundColor: '#ffffff',
-                  borderRadius: '0.5rem',
-                  border: '1px solid #e2e8f0',
-                  fontSize: '0.95rem',
-                  lineHeight: 1.6,
-                  marginBottom: '1rem',
-                  color: '#1e293b',
-                  overflowX: 'auto',
-                }}
-              />
-            ) : (
-              <div style={{ padding: '1.5rem', border: '1px dashed #cbd5e1', borderRadius: 6, textAlign: 'center', color: '#94a3b8', fontStyle: 'italic', marginBottom: '1rem' }}>
-                Start typing in the TipTap editor on the left to see live content preview here...
-              </div>
-            )}
-
-            {/* Video Player */}
-            {(azureBlobUrl || vimeoId) && (
-              <div style={{ marginBottom: '1rem' }}>
-                <LmsVideoPlayer title={title} azureBlobUrl={azureBlobUrl} vimeoId={vimeoId} />
-              </div>
-            )}
-          </div>
+        {/* TipTap Rich Text Editor */}
+        <div style={{ backgroundColor: '#ffffff', borderRadius: 10, border: '1px solid #e2e8f0', padding: 20 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 12px 0', color: '#1e293b' }}>
+            Rich Text & Graphical HTML Content (TipTap Authoring)
+          </h2>
+          <LmsRichTextEditor content={contentHtml} onChange={(html) => setContentHtml(html)} />
         </div>
       </div>
+
+      {/* ── MODAL: Preview Student View ────────────────────────────────────────── */}
+      {previewModalOpen && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ backgroundColor: '#ffffff', borderRadius: 10, padding: 24, maxWidth: 850, width: '90%', maxHeight: '90vh', overflowY: 'auto', border: '1px solid #cbd5e1', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, borderBottom: '1px solid #f1f5f9', paddingBottom: 10 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#2563eb', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                👁️ Student Portal Preview
+              </span>
+              <button
+                type="button"
+                onClick={() => setPreviewModalOpen(false)}
+                style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#64748b' }}
+              >
+                &times;
+              </button>
+            </div>
+
+            <div style={{ padding: '1.25rem', border: '1px solid #e2e8f0', borderRadius: 8, backgroundColor: '#fafafa' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                <div>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: '#2563eb', textTransform: 'uppercase' }}>Reading Module</span>
+                  <h3 style={{ margin: '2px 0 0 0', fontSize: 18, fontWeight: 700, color: '#0f172a' }}>
+                    📦 {title || 'Untitled Block'}
+                  </h3>
+                </div>
+              </div>
+
+              {/* Mapped KE Badges */}
+              {knowledgeEvidenceIds.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+                  {knowledgeEvidenceIds.map((kId) => {
+                    const kObj = kes.find((k) => k.id === kId);
+                    return (
+                      <span key={kId} style={{ padding: '2px 8px', backgroundColor: '#eff6ff', color: '#1e40af', borderRadius: 4, fontSize: 11, fontWeight: 600, border: '1px solid #bfdbfe' }}>
+                        KE: {kObj?.code || 'KE'}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+
+              {description && (
+                <p style={{ fontSize: '0.92rem', color: '#475569', marginTop: 0, marginBottom: '1rem', fontStyle: 'italic' }}>
+                  {description}
+                </p>
+              )}
+
+              {/* Rendered HTML Content */}
+              {contentHtml ? (
+                <div
+                  dangerouslySetInnerHTML={{ __html: contentHtml }}
+                  style={{
+                    padding: '1.25rem',
+                    backgroundColor: '#ffffff',
+                    borderRadius: '0.5rem',
+                    border: '1px solid #e2e8f0',
+                    fontSize: '0.95rem',
+                    lineHeight: 1.6,
+                    marginBottom: '1rem',
+                    color: '#1e293b',
+                    overflowX: 'auto',
+                  }}
+                />
+              ) : (
+                <div style={{ padding: '1.5rem', border: '1px dashed #cbd5e1', borderRadius: 6, textAlign: 'center', color: '#94a3b8', fontStyle: 'italic', marginBottom: '1rem' }}>
+                  No content typed yet. Close preview and start authoring.
+                </div>
+              )}
+
+              {/* Video Player */}
+              {(azureBlobUrl || vimeoId) && (
+                <div style={{ marginBottom: '1rem' }}>
+                  <LmsVideoPlayer title={title} azureBlobUrl={azureBlobUrl} vimeoId={vimeoId} />
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
+              <button
+                type="button"
+                onClick={() => setPreviewModalOpen(false)}
+                style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid #ccc', background: '#ffffff', cursor: 'pointer', fontWeight: 600 }}
+              >
+                Close Preview
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── MODAL: Import Axcelerate HTML ────────────────────────────────────────── */}
       {importModalOpen && (

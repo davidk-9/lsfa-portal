@@ -1,4 +1,5 @@
 import { useEditor, EditorContent } from '@tiptap/react';
+import { BubbleMenu } from '@tiptap/react/menus';
 import StarterKit from '@tiptap/starter-kit';
 import { Image } from '@tiptap/extension-image';
 import { Table } from '@tiptap/extension-table';
@@ -27,7 +28,7 @@ export function LmsRichTextEditor({ content, onChange, readOnly = false }: LmsRi
   }
   const [htmlValue, setHtmlValue] = useState(content || '');
 
-  // Custom Image extension to add width support
+  // Custom Image extension to add width support and selection support
   const CustomImage = Image.extend({
     addAttributes() {
       return {
@@ -37,7 +38,7 @@ export function LmsRichTextEditor({ content, onChange, readOnly = false }: LmsRi
           renderHTML: attributes => {
             return {
               width: attributes.width,
-              style: `width: ${attributes.width}; max-width: 100%; height: auto;`,
+              style: `width: ${attributes.width}; max-width: 100%; height: auto; cursor: pointer;`,
             };
           },
           parseHTML: element => element.getAttribute('width') || element.style.width || '100%',
@@ -290,44 +291,16 @@ export function LmsRichTextEditor({ content, onChange, readOnly = false }: LmsRi
 
           <span style={{ color: '#cbd5e1', margin: '0 2px' }}>|</span>
 
-          {/* Image Width Controls */}
-          {editor.isActive('image') && (
-            <>
-              <span style={{ color: '#cbd5e1', margin: '0 2px' }}>|</span>
-              <button
-                type="button"
-                onClick={() => editor.chain().focus().updateAttributes('image', { width: '25%' }).run()}
-                style={{ padding: '4px 6px', borderRadius: 4, border: '1px solid #cbd5e1', backgroundColor: editor.getAttributes('image').width === '25%' ? '#e2e8f0' : '#ffffff', fontSize: 11, cursor: 'pointer' }}
-                title="25% Width"
-              >
-                25%
-              </button>
-              <button
-                type="button"
-                onClick={() => editor.chain().focus().updateAttributes('image', { width: '50%' }).run()}
-                style={{ padding: '4px 6px', borderRadius: 4, border: '1px solid #cbd5e1', backgroundColor: editor.getAttributes('image').width === '50%' ? '#e2e8f0' : '#ffffff', fontSize: 11, cursor: 'pointer' }}
-                title="50% Width"
-              >
-                50%
-              </button>
-              <button
-                type="button"
-                onClick={() => editor.chain().focus().updateAttributes('image', { width: '75%' }).run()}
-                style={{ padding: '4px 6px', borderRadius: 4, border: '1px solid #cbd5e1', backgroundColor: editor.getAttributes('image').width === '75%' ? '#e2e8f0' : '#ffffff', fontSize: 11, cursor: 'pointer' }}
-                title="75% Width"
-              >
-                75%
-              </button>
-              <button
-                type="button"
-                onClick={() => editor.chain().focus().updateAttributes('image', { width: '100%' }).run()}
-                style={{ padding: '4px 6px', borderRadius: 4, border: '1px solid #cbd5e1', backgroundColor: !editor.getAttributes('image').width || editor.getAttributes('image').width === '100%' ? '#e2e8f0' : '#ffffff', fontSize: 11, cursor: 'pointer' }}
-                title="100% Width"
-              >
-                100%
-              </button>
-            </>
-          )}
+          {/* Image Upload */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploadingImage}
+            style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid #bbf7d0', backgroundColor: '#f0fdf4', color: '#166534', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}
+            title="Upload image to Azure Storage"
+          >
+            {uploadingImage ? 'Uploading...' : '🖼️ Upload Image'}
+          </button>
 
           <span style={{ color: '#cbd5e1', margin: '0 2px' }}>|</span>
 
@@ -354,7 +327,127 @@ export function LmsRichTextEditor({ content, onChange, readOnly = false }: LmsRi
       )}
 
       {/* Editor Content Area */}
-      <div style={{ padding: '12px 16px', minHeight: 250, maxHeight: 600, overflowY: 'auto' }}>
+      <div style={{ padding: '12px 16px', minHeight: 250, maxHeight: 600, overflowY: 'auto', position: 'relative' }}>
+        {/* Floating Bubble Menu for Selected Images / Tables */}
+        {!readOnly && editor && (
+          <>
+            {/* Image Property Bubble Menu */}
+            <BubbleMenu
+              editor={editor}
+              shouldShow={({ editor: currentEditor }: { editor: any }) => currentEditor.isActive('image')}
+              updateDelay={100}
+            >
+              <div style={{ display: 'flex', gap: 4, padding: '4px 8px', backgroundColor: '#1e293b', borderRadius: 6, border: '1px solid #475569', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.3)', alignItems: 'center' }}>
+                <span style={{ color: '#94a3b8', fontSize: 11, fontWeight: 600, marginRight: 4 }}>Width:</span>
+                <button
+                  type="button"
+                  onClick={() => editor.chain().focus().updateAttributes('image', { width: '25%' }).run()}
+                  style={{ padding: '3px 8px', borderRadius: 4, border: 'none', backgroundColor: editor.getAttributes('image').width === '25%' ? '#2563eb' : '#334155', color: '#ffffff', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}
+                >
+                  25%
+                </button>
+                <button
+                  type="button"
+                  onClick={() => editor.chain().focus().updateAttributes('image', { width: '50%' }).run()}
+                  style={{ padding: '3px 8px', borderRadius: 4, border: 'none', backgroundColor: editor.getAttributes('image').width === '50%' ? '#2563eb' : '#334155', color: '#ffffff', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}
+                >
+                  50%
+                </button>
+                <button
+                  type="button"
+                  onClick={() => editor.chain().focus().updateAttributes('image', { width: '75%' }).run()}
+                  style={{ padding: '3px 8px', borderRadius: 4, border: 'none', backgroundColor: editor.getAttributes('image').width === '75%' ? '#2563eb' : '#334155', color: '#ffffff', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}
+                >
+                  75%
+                </button>
+                <button
+                  type="button"
+                  onClick={() => editor.chain().focus().updateAttributes('image', { width: '100%' }).run()}
+                  style={{ padding: '3px 8px', borderRadius: 4, border: 'none', backgroundColor: !editor.getAttributes('image').width || editor.getAttributes('image').width === '100%' ? '#2563eb' : '#334155', color: '#ffffff', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}
+                >
+                  100%
+                </button>
+                <span style={{ color: '#475569', margin: '0 2px' }}>|</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const alt = window.prompt('Enter Image Alt / Description Text:', editor.getAttributes('image').alt || '');
+                    if (alt !== null) {
+                      editor.chain().focus().updateAttributes('image', { alt }).run();
+                    }
+                  }}
+                  style={{ padding: '3px 8px', borderRadius: 4, border: 'none', backgroundColor: '#334155', color: '#ffffff', fontSize: 11, cursor: 'pointer' }}
+                  title="Alt Text"
+                >
+                  📝 Alt Text
+                </button>
+              </div>
+            </BubbleMenu>
+
+            {/* Table Property Bubble Menu */}
+            <BubbleMenu
+              editor={editor}
+              shouldShow={({ editor: currentEditor }: { editor: any }) => currentEditor.isActive('table')}
+              updateDelay={100}
+            >
+              <div style={{ display: 'flex', gap: 4, padding: '4px 8px', backgroundColor: '#1e293b', borderRadius: 6, border: '1px solid #475569', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.3)', alignItems: 'center' }}>
+                <span style={{ color: '#94a3b8', fontSize: 11, fontWeight: 600, marginRight: 4 }}>Table:</span>
+                <button
+                  type="button"
+                  onClick={() => editor.chain().focus().addColumnBefore().run()}
+                  style={{ padding: '3px 6px', borderRadius: 4, border: 'none', backgroundColor: '#334155', color: '#ffffff', fontSize: 11, cursor: 'pointer' }}
+                >
+                  +Col Left
+                </button>
+                <button
+                  type="button"
+                  onClick={() => editor.chain().focus().addColumnAfter().run()}
+                  style={{ padding: '3px 6px', borderRadius: 4, border: 'none', backgroundColor: '#334155', color: '#ffffff', fontSize: 11, cursor: 'pointer' }}
+                >
+                  +Col Right
+                </button>
+                <button
+                  type="button"
+                  onClick={() => editor.chain().focus().deleteColumn().run()}
+                  style={{ padding: '3px 6px', borderRadius: 4, border: 'none', backgroundColor: '#991b1b', color: '#ffffff', fontSize: 11, cursor: 'pointer' }}
+                >
+                  -Col
+                </button>
+                <span style={{ color: '#475569', margin: '0 1px' }}>|</span>
+                <button
+                  type="button"
+                  onClick={() => editor.chain().focus().addRowBefore().run()}
+                  style={{ padding: '3px 6px', borderRadius: 4, border: 'none', backgroundColor: '#334155', color: '#ffffff', fontSize: 11, cursor: 'pointer' }}
+                >
+                  +Row Above
+                </button>
+                <button
+                  type="button"
+                  onClick={() => editor.chain().focus().addRowAfter().run()}
+                  style={{ padding: '3px 6px', borderRadius: 4, border: 'none', backgroundColor: '#334155', color: '#ffffff', fontSize: 11, cursor: 'pointer' }}
+                >
+                  +Row Below
+                </button>
+                <button
+                  type="button"
+                  onClick={() => editor.chain().focus().deleteRow().run()}
+                  style={{ padding: '3px 6px', borderRadius: 4, border: 'none', backgroundColor: '#991b1b', color: '#ffffff', fontSize: 11, cursor: 'pointer' }}
+                >
+                  -Row
+                </button>
+                <span style={{ color: '#475569', margin: '0 1px' }}>|</span>
+                <button
+                  type="button"
+                  onClick={() => editor.chain().focus().deleteTable().run()}
+                  style={{ padding: '3px 8px', borderRadius: 4, border: 'none', backgroundColor: '#dc2626', color: '#ffffff', fontSize: 11, cursor: 'pointer', fontWeight: 'bold' }}
+                >
+                  🗑️ Delete Table
+                </button>
+              </div>
+            </BubbleMenu>
+          </>
+        )}
+
         {isHtmlMode ? (
           <textarea
             value={htmlValue}
@@ -415,12 +508,29 @@ export function LmsRichTextEditor({ content, onChange, readOnly = false }: LmsRi
           height: auto;
           border-radius: 6px;
           margin: 8px 0;
+          cursor: pointer;
+          transition: outline 0.15s ease-in-out;
+        }
+        .ProseMirror img.ProseMirror-selectednode,
+        .ProseMirror img:focus,
+        .ProseMirror img:hover {
+          outline: 3px solid #3b82f6;
+          outline-offset: 2px;
         }
         .ProseMirror blockquote {
           border-left: 3px solid #cbd5e1;
           padding-left: 12px;
           color: #64748b;
           margin: 12px 0;
+        }
+        /* Style for selected table cell helper */
+        .ProseMirror .selectedCell:after {
+          z-index: 2;
+          position: absolute;
+          content: "";
+          left: 0; right: 0; top: 0; bottom: 0;
+          background: rgba(200, 200, 255, 0.4);
+          pointer-events: none;
         }
       `}</style>
     </div>
