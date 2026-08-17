@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service';
 import { AzureStorageService } from '../azure-storage/azure-storage.service';
 import { SettingsService } from '../settings/settings.service';
+import { AiService } from '../ai/ai.service';
 import * as cheerio from 'cheerio';
 import axios from 'axios';
 import { randomBytes } from 'crypto';
@@ -12,6 +13,7 @@ export class LmsAdminService {
     private readonly prisma: PrismaService,
     private readonly azure: AzureStorageService,
     private readonly settings: SettingsService,
+    private readonly ai: AiService,
   ) {}
 
   // ── Knowledge Evidence (KE) ──────────────────────────────────────────────────
@@ -60,6 +62,7 @@ export class LmsAdminService {
         code: ke.code,
         title: ke.title,
         description: ke.description,
+        requiresCoverage: ke.requiresCoverage,
         courseCodes: ke.courseCodes,
         _count: ke._count,
         isLocked,
@@ -67,10 +70,16 @@ export class LmsAdminService {
     });
   }
 
+  async summarizeKe(statement: string): Promise<{ summary: string }> {
+    const summary = await this.ai.summarizeKe(statement);
+    return { summary };
+  }
+
   async createKnowledgeEvidence(dto: {
     code: string;
     title: string;
     description?: string;
+    requiresCoverage?: boolean;
     courseCodeIds?: number[];
   }) {
     return this.prisma.lmsKnowledgeEvidence.create({
@@ -78,6 +87,7 @@ export class LmsAdminService {
         code: dto.code,
         title: dto.title,
         description: dto.description || '',
+        requiresCoverage: dto.requiresCoverage !== undefined ? dto.requiresCoverage : true,
         courseCodes: dto.courseCodeIds && dto.courseCodeIds.length > 0
           ? { connect: dto.courseCodeIds.map((id) => ({ id })) }
           : undefined,
@@ -94,6 +104,7 @@ export class LmsAdminService {
       code?: string;
       title?: string;
       description?: string;
+      requiresCoverage?: boolean;
       courseCodeIds?: number[];
     },
   ) {
@@ -147,6 +158,7 @@ export class LmsAdminService {
         code: dto.code,
         title: dto.title,
         description: dto.description,
+        requiresCoverage: dto.requiresCoverage !== undefined ? dto.requiresCoverage : undefined,
         courseCodes: dto.courseCodeIds
           ? { set: dto.courseCodeIds.map((cId) => ({ id: cId })) }
           : undefined,
@@ -1115,7 +1127,7 @@ export class LmsAdminService {
       });
 
       if (plan && plan.courseCode) {
-        const requiredKEs = plan.courseCode.knowledgeEvidences || [];
+        const requiredKEs = (plan.courseCode.knowledgeEvidences || []).filter(ke => ke.requiresCoverage !== false);
 
         // Collect all KEs present in attached blobs
         const blobKeIds = new Set<string>();

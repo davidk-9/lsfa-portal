@@ -48,6 +48,12 @@ export class LmsAdminController {
     return this.lmsAdminService.deleteKnowledgeEvidence(id);
   }
 
+  @Post('ke/summarize')
+  async summarizeKe(@Body('statement') statement: string) {
+    const summaryObj = await this.lmsAdminService.summarizeKe(statement);
+    return summaryObj;
+  }
+
   // ── Chapters & Content Blocks (Blobs) ────────────────────────────────────────
 
   @Get('chapters')

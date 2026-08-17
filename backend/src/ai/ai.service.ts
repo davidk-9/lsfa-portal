@@ -433,6 +433,61 @@ export class AiService {
     );
   }
 
+  // Automatically generate a 3-7 word professional summary of a KE statement
+  async summarizeKe(statement: string): Promise<string> {
+    if (!statement || !statement.trim()) {
+      throw new BadRequestException('Statement is required for summary generation.');
+    }
+
+    const apiKey = (await this.settings.get('openai_api_key'))?.trim();
+    if (!apiKey) {
+      throw new BadRequestException('OpenAI API key is not configured. Set it in Settings → AI.');
+    }
+
+    const primaryModel = (await this.settings.get('ai_model_primary'))?.trim() || 'gpt-4o-mini';
+
+    const prompt = 
+      'You are a professional educational parser specializing in VET / ASQA training standards.\n' +
+      'Given a technical Knowledge Evidence (KE) statement / requirement, generate a short, professional, 3 to 7 word summary that acts as a title for this item.\n' +
+      'Rules:\n' +
+      '- Maintain high technical accuracy (keep codes or critical standard terms like "DRSABCD" or "CPR" if mentioned).\n' +
+      '- Make it active and clear.\n' +
+      '- Output ONLY the 3 to 7 word summary. Do not include quotes, markdown, punctuation, or any introductory text.\n\n' +
+      `Statement: ${statement}`;
+
+    try {
+      const response = await axios.post(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          model: primaryModel,
+          messages: [{ role: 'user', content: prompt }],
+          max_completion_tokens: 30,
+          temperature: 0.3,
+        },
+        {
+          timeout: 15000,
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      const content = response.data?.choices?.[0]?.message?.content;
+      if (!content || typeof content !== 'string') {
+        throw new Error('Invalid response structure from OpenAI.');
+      }
+
+      return content.trim().replace(/^["']|["']$/g, ''); // strip any accidental outer quotes
+    } catch (err: any) {
+      this.logger.error(`OpenAI summary generation failed: ${err.message}`);
+      // Simple fallback if AI fails: grab first 5 words of statement and append '...'
+      const words = statement.trim().split(/\s+/);
+      if (words.length <= 5) return statement.trim();
+      return words.slice(0, 5).join(' ') + '...';
+    }
+  }
+
   private clamp01(value: number): number {
     if (Number.isNaN(value)) return 0;
     return Math.max(0, Math.min(1, value));

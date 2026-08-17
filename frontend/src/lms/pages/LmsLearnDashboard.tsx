@@ -383,6 +383,17 @@ export function LmsLearnDashboard() {
                           <div style={{ padding: '1.25rem', borderTop: '1px solid #f1f5f9', backgroundColor: '#fafafa' }}>
                             {b.description && <p style={{ fontSize: '0.95rem', color: '#475569', marginBottom: '1rem' }}>{b.description}</p>}
 
+                            {(b.azureBlobUrl || b.vimeoId) && (
+                              <div style={{ marginBottom: '1rem' }}>
+                                <LmsVideoPlayer
+                                  title={b.title}
+                                  azureBlobUrl={b.azureBlobUrl}
+                                  vimeoId={b.vimeoId}
+                                  onCompleted={() => handleMarkBlockViewed(b.id, b.durationSeconds)}
+                                />
+                              </div>
+                            )}
+
                             {b.contentHtml && (
                               <div
                                 dangerouslySetInnerHTML={{ __html: b.contentHtml }}
@@ -396,17 +407,6 @@ export function LmsLearnDashboard() {
                                   marginBottom: '1rem',
                                 }}
                               />
-                            )}
-
-                            {(b.azureBlobUrl || b.vimeoId) && (
-                              <div style={{ marginBottom: '1rem' }}>
-                                <LmsVideoPlayer
-                                  title={b.title}
-                                  azureBlobUrl={b.azureBlobUrl}
-                                  vimeoId={b.vimeoId}
-                                  onCompleted={() => handleMarkBlockViewed(b.id, b.durationSeconds)}
-                                />
-                              </div>
                             )}
 
                             {b.status !== 'competent' && (

@@ -383,15 +383,16 @@ model LearningPlan {
 }
 
 model LmsKnowledgeEvidence {
-  id          String            @id @default(uuid())
-  code        String            // e.g., "KE01"
-  title       String
-  description String?
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  courseCodes CourseCode[]
-  blobs       LmsLearningBlob[]
-  questions   LmsQuestion[]
+  id               String            @id @default(uuid())
+  code             String            // e.g., "KE01"
+  title            String
+  description      String?
+  requiresCoverage Boolean           @default(true)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  courseCodes      CourseCode[]
+  blobs            LmsLearningBlob[]
+  questions        LmsQuestion[]
 
   @@index([code])
 }

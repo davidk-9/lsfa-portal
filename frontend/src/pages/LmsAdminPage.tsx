@@ -58,12 +58,14 @@ export function LmsAdminPage() {
 
   // Modals & Form states
   const [keModal, setKeModal] = useState<{ open: boolean; item?: KnowledgeEvidence | null }>({ open: false });
-  const [keForm, setKeForm] = useState<{ code: string; title: string; description: string; courseCodeIds: number[] }>({
+  const [keForm, setKeForm] = useState<{ code: string; title: string; description: string; requiresCoverage: boolean; courseCodeIds: number[] }>({
     code: '',
     title: '',
     description: '',
+    requiresCoverage: true,
     courseCodeIds: [],
   });
+  const [summarizingKe, setSummarizingKe] = useState(false);
 
   const [chapterModal, setChapterModal] = useState<{ open: boolean; item?: Chapter | null }>({ open: false });
   const [chapterForm, setChapterForm] = useState<{ title: string; description: string; sortOrder: number }>({
@@ -260,21 +262,62 @@ export function LmsAdminPage() {
         code: ke.code,
         title: ke.title,
         description: ke.description || '',
+        requiresCoverage: ke.requiresCoverage !== undefined ? ke.requiresCoverage : true,
         courseCodeIds: ke.courseCodes?.map((c) => c.id) || [],
       });
       setKeModal({ open: true, item: ke });
     } else {
-      setKeForm({ code: '', title: '', description: '', courseCodeIds: courseCodes.map((c) => c.id) });
+      setKeForm({ code: '', title: '', description: '', requiresCoverage: true, courseCodeIds: courseCodes.map((c) => c.id) });
       setKeModal({ open: true, item: null });
+    }
+  };
+
+  const handleAutoSummarizeKe = async () => {
+    if (!keForm.description.trim()) {
+      alert('Please fill in the statement / description first so we can summarize it.');
+      return;
+    }
+    setSummarizingKe(true);
+    try {
+      const res = await lmsAdminApi.summarizeKE(keForm.description);
+      if (res.data?.summary) {
+        setKeForm((prev) => ({ ...prev, title: res.data.summary }));
+      }
+    } catch (err: any) {
+      alert(`AI Summary failed: ${err.response?.data?.message || err.message}`);
+    } finally {
+      setSummarizingKe(false);
     }
   };
 
   const handleSaveKe = async () => {
     try {
+      let finalForm = { ...keForm };
+      
+      // Auto-summarize if title is empty/blank
+      if (!finalForm.title.trim()) {
+        if (!finalForm.description.trim()) {
+          alert('A Title is required. If blank, please provide a description/statement so AI can generate one.');
+          return;
+        }
+        setSummarizingKe(true);
+        try {
+          const res = await lmsAdminApi.summarizeKE(finalForm.description);
+          if (res.data?.summary) {
+            finalForm.title = res.data.summary;
+            setKeForm(finalForm);
+          }
+        } catch (err: any) {
+          console.error('AI summary fallback on save failed:', err);
+        } finally {
+          setSummarizingKe(false);
+        }
+      }
+
       if (keModal.item) {
-        await lmsAdminApi.updateKE(keModal.item.id, keForm);
+        await lmsAdminApi.updateKE(keModal.item.id, finalForm);
       } else {
-        await lmsAdminApi.createKE(keForm);
+        await lmsAdminApi.createKE(finalForm);
       }
       setKeModal({ open: false });
       await loadKEs();
@@ -882,6 +925,7 @@ export function LmsAdminPage() {
                 <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>
                   <th style={{ padding: '12px 16px' }}>Code</th>
                   <th style={{ padding: '12px 16px' }}>Title & Description</th>
+                  <th style={{ padding: '12px 16px' }}>Coverage Required</th>
                   <th style={{ padding: '12px 16px' }}>Course Codes</th>
                   <th style={{ padding: '12px 16px' }}>Mapped Items</th>
                   <th style={{ padding: '12px 16px', textAlign: 'right' }}>Actions</th>
@@ -889,7 +933,7 @@ export function LmsAdminPage() {
               </thead>
               <tbody>
                 {kes.map((ke) => (
-                  <tr key={ke.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <tr key={ke.id} style={{ borderBottom: '1px solid #f1f5f9', opacity: ke.requiresCoverage ? 1 : 0.7 }}>
                     <td style={{ padding: '12px 16px', fontWeight: 700, color: '#1e3a8a' }}>
                       {ke.code}
                       {ke.isLocked && (
@@ -899,8 +943,20 @@ export function LmsAdminPage() {
                       )}
                     </td>
                     <td style={{ padding: '12px 16px' }}>
-                      <div style={{ fontWeight: 600 }}>{ke.title}</div>
+                      <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {ke.title}
+                        {!ke.requiresCoverage && (
+                          <span style={{ fontSize: 11, padding: '1px 6px', backgroundColor: '#f1f5f9', color: '#64748b', borderRadius: 4, fontWeight: 500 }}>
+                            Grouping / Info Only
+                          </span>
+                        )}
+                      </div>
                       <div style={{ color: '#64748b', fontSize: 13 }}>{ke.description}</div>
+                    </td>
+                    <td style={{ padding: '12px 16px' }}>
+                      <span style={{ padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, backgroundColor: ke.requiresCoverage ? '#ecfdf5' : '#f1f5f9', color: ke.requiresCoverage ? '#047857' : '#64748b' }}>
+                        {ke.requiresCoverage ? '✓ Yes' : '✕ No'}
+                      </span>
                     </td>
                     <td style={{ padding: '12px 16px' }}>
                       {ke.courseCodes?.map((c) => (
@@ -1411,51 +1467,106 @@ export function LmsAdminPage() {
         </div>
       )}
 
-      {/* ── MODAL: KE ────────────────────────────────────────────────────────────── */}
+      {/* ── MODAL: Knowledge Evidence (KE) ────────────────────────────────────────── */}
       {keModal.open && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ backgroundColor: '#fff', borderRadius: 8, padding: 24, maxWidth: 500, width: '100%' }}>
-            <h3 style={{ margin: '0 0 16px 0' }}>{keModal.item ? 'Edit Knowledge Evidence' : 'Add Knowledge Evidence'}</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ backgroundColor: '#ffffff', borderRadius: 10, padding: 24, maxWidth: 550, width: '95%' }}>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: 18, fontWeight: 700, color: '#0f172a' }}>
+              {keModal.item ? 'Edit Knowledge Evidence Item' : 'Add New Knowledge Evidence Item'}
+            </h3>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 12 }}>
+                <label>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>KE Code:</div>
+                  <input
+                    type="text"
+                    placeholder="e.g. KE01"
+                    value={keForm.code}
+                    onChange={(e) => setKeForm({ ...keForm, code: e.target.value })}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1' }}
+                  />
+                </label>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Summary Title:</span>
+                    <button
+                      type="button"
+                      disabled={summarizingKe || !keForm.description.trim()}
+                      onClick={handleAutoSummarizeKe}
+                      style={{ border: 'none', backgroundColor: 'transparent', color: '#2563eb', fontSize: 11, cursor: 'pointer', fontWeight: 600, padding: 0 }}
+                      title="Generate a short 3-7 word summary title from the statement below using OpenAI"
+                    >
+                      {summarizingKe ? '⏳ Summarizing...' : '✨ AI Auto-Summarize'}
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="e.g. DRSABCD Action Plan"
+                    value={keForm.title}
+                    onChange={(e) => setKeForm({ ...keForm, title: e.target.value })}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1' }}
+                  />
+                </div>
+              </div>
+
               <label>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>Code (e.g. KE01):</div>
-                <input type="text" value={keForm.code} onChange={(e) => setKeForm({ ...keForm, code: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }} />
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Full Statement / Description:</div>
+                <textarea
+                  rows={4}
+                  placeholder="Paste the full statement from training.gov.au..."
+                  value={keForm.description}
+                  onChange={(e) => setKeForm({ ...keForm, description: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
+                />
               </label>
-              <label>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>Title:</div>
-                <input type="text" value={keForm.title} onChange={(e) => setKeForm({ ...keForm, title: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }} />
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', border: '1px solid #cbd5e1', borderRadius: 6, padding: '10px 12px', backgroundColor: keForm.requiresCoverage ? '#f0fdf4' : '#f8fafc' }}>
+                <input
+                  type="checkbox"
+                  checked={keForm.requiresCoverage}
+                  onChange={(e) => setKeForm({ ...keForm, requiresCoverage: e.target.checked })}
+                  style={{ width: 16, height: 16 }}
+                />
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b' }}>Requires Learning Plan Coverage</div>
+                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                    If true, publishing a learning plan requires mapping at least 1 Content Block and 1 Question to this KE. Turn off for general/grouping statements.
+                  </div>
+                </div>
               </label>
-              <label>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>Description:</div>
-                <textarea rows={3} value={keForm.description} onChange={(e) => setKeForm({ ...keForm, description: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }} />
-              </label>
+
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Mapped Course Codes:</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, padding: 8, border: '1px solid #ccc', borderRadius: 4, maxHeight: 120, overflowY: 'auto' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Applies to Course Codes:</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, padding: 12, border: '1px solid #cbd5e1', borderRadius: 6, backgroundColor: '#f8fafc' }}>
                   {courseCodes.map((c) => {
                     const isChecked = keForm.courseCodeIds.includes(c.id);
                     return (
-                      <label key={c.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, cursor: 'pointer' }}>
+                      <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
                         <input
                           type="checkbox"
                           checked={isChecked}
                           onChange={(e) => {
-                            const updated = e.target.checked
-                              ? [...keForm.courseCodeIds, c.id]
-                              : keForm.courseCodeIds.filter((id) => id !== c.id);
-                            setKeForm({ ...keForm, courseCodeIds: updated });
+                            if (e.target.checked) {
+                              setKeForm({ ...keForm, courseCodeIds: [...keForm.courseCodeIds, c.id] });
+                            } else {
+                              setKeForm({ ...keForm, courseCodeIds: keForm.courseCodeIds.filter((id) => id !== c.id) });
+                            }
                           }}
                         />
-                        {c.code}
+                        <span>{c.code}</span>
                       </label>
                     );
                   })}
                 </div>
               </div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-              <button type="button" onClick={() => setKeModal({ open: false })} style={{ padding: '8px 16px', borderRadius: 4, border: '1px solid #ccc' }}>Cancel</button>
-              <button type="button" onClick={handleSaveKe} style={{ padding: '8px 16px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: 4, fontWeight: 600 }}>Save KE</button>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 24 }}>
+              <button type="button" onClick={() => setKeModal({ open: false })} style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid #ccc', background: '#ffffff', cursor: 'pointer', fontWeight: 600 }}>Cancel</button>
+              <button type="button" disabled={summarizingKe} onClick={handleSaveKe} style={{ padding: '8px 20px', backgroundColor: '#2563eb', color: '#ffffff', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}>
+                {summarizingKe ? 'Summarizing...' : 'Save Item'}
+              </button>
             </div>
           </div>
         </div>

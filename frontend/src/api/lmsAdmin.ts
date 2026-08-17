@@ -5,6 +5,7 @@ export interface KnowledgeEvidence {
   code: string;
   title: string;
   description?: string;
+  requiresCoverage: boolean;
   courseCodes?: Array<{ id: number; code: string; name: string }>;
   isLocked?: boolean;
   publishedPlans?: string[];
@@ -97,11 +98,13 @@ export interface LearningPlan {
 export const lmsAdminApi = {
   // Knowledge Evidence
   getKEs: () => api.get<KnowledgeEvidence[]>('/lms-admin/ke'),
-  createKE: (data: { code: string; title: string; description?: string; courseCodeIds?: number[] }) =>
+  createKE: (data: { code: string; title: string; description?: string; requiresCoverage?: boolean; courseCodeIds?: number[] }) =>
     api.post<KnowledgeEvidence>('/lms-admin/ke', data),
-  updateKE: (id: string, data: { code?: string; title?: string; description?: string; courseCodeIds?: number[] }) =>
+  updateKE: (id: string, data: { code?: string; title?: string; description?: string; requiresCoverage?: boolean; courseCodeIds?: number[] }) =>
     api.put<KnowledgeEvidence>(`/lms-admin/ke/${id}`, data),
   deleteKE: (id: string) => api.delete(`/lms-admin/ke/${id}`),
+  summarizeKE: (statement: string) =>
+    api.post<{ summary: string }>('/lms-admin/ke/summarize', { statement }),
 
   // Chapters & Blobs
   getChapters: (courseCodeId?: number) => api.get<Chapter[]>(`/lms-admin/chapters${courseCodeId ? `?courseCodeId=${courseCodeId}` : ''}`),
