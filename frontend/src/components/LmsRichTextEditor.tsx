@@ -19,6 +19,27 @@ interface LmsRichTextEditorProps {
 export function LmsRichTextEditor({ content, onChange, readOnly = false }: LmsRichTextEditorProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [isHtmlMode, setIsHtmlMode] = useState(false);
+  const [htmlValue, setHtmlValue] = useState(content || '');
+
+  // Custom Image extension to add width support
+  const CustomImage = Image.extend({
+    addAttributes() {
+      return {
+        ...this.parent?.(),
+        width: {
+          default: '100%',
+          renderHTML: attributes => {
+            return {
+              width: attributes.width,
+              style: `width: ${attributes.width}; max-width: 100%; height: auto;`,
+            };
+          },
+          parseHTML: element => element.getAttribute('width') || element.style.width || '100%',
+        },
+      };
+    },
+  });
 
   const editor = useEditor({
     extensions: [
@@ -26,7 +47,7 @@ export function LmsRichTextEditor({ content, onChange, readOnly = false }: LmsRi
         heading: { levels: [2, 3, 4] },
         link: false,
       }),
-      Image.configure({
+      CustomImage.configure({
         inline: true,
         allowBase64: true,
       }),
@@ -47,7 +68,9 @@ export function LmsRichTextEditor({ content, onChange, readOnly = false }: LmsRi
     content: content || '',
     editable: !readOnly,
     onUpdate: ({ editor }) => {
-      onChange(editor.getHTML());
+      const html = editor.getHTML();
+      onChange(html);
+      setHtmlValue(html);
     },
   });
 
@@ -55,6 +78,7 @@ export function LmsRichTextEditor({ content, onChange, readOnly = false }: LmsRi
   useEffect(() => {
     if (editor && content !== editor.getHTML()) {
       editor.commands.setContent(content || '');
+      setHtmlValue(content || '');
     }
   }, [content, editor]);
 
@@ -261,22 +285,92 @@ export function LmsRichTextEditor({ content, onChange, readOnly = false }: LmsRi
 
           <span style={{ color: '#cbd5e1', margin: '0 2px' }}>|</span>
 
-          {/* Image Upload */}
+          {/* Image Width Controls */}
+          {editor.isActive('image') && (
+            <>
+              <span style={{ color: '#cbd5e1', margin: '0 2px' }}>|</span>
+              <button
+                type="button"
+                onClick={() => editor.chain().focus().updateAttributes('image', { width: '25%' }).run()}
+                style={{ padding: '4px 6px', borderRadius: 4, border: '1px solid #cbd5e1', backgroundColor: editor.getAttributes('image').width === '25%' ? '#e2e8f0' : '#ffffff', fontSize: 11, cursor: 'pointer' }}
+                title="25% Width"
+              >
+                25%
+              </button>
+              <button
+                type="button"
+                onClick={() => editor.chain().focus().updateAttributes('image', { width: '50%' }).run()}
+                style={{ padding: '4px 6px', borderRadius: 4, border: '1px solid #cbd5e1', backgroundColor: editor.getAttributes('image').width === '50%' ? '#e2e8f0' : '#ffffff', fontSize: 11, cursor: 'pointer' }}
+                title="50% Width"
+              >
+                50%
+              </button>
+              <button
+                type="button"
+                onClick={() => editor.chain().focus().updateAttributes('image', { width: '75%' }).run()}
+                style={{ padding: '4px 6px', borderRadius: 4, border: '1px solid #cbd5e1', backgroundColor: editor.getAttributes('image').width === '75%' ? '#e2e8f0' : '#ffffff', fontSize: 11, cursor: 'pointer' }}
+                title="75% Width"
+              >
+                75%
+              </button>
+              <button
+                type="button"
+                onClick={() => editor.chain().focus().updateAttributes('image', { width: '100%' }).run()}
+                style={{ padding: '4px 6px', borderRadius: 4, border: '1px solid #cbd5e1', backgroundColor: !editor.getAttributes('image').width || editor.getAttributes('image').width === '100%' ? '#e2e8f0' : '#ffffff', fontSize: 11, cursor: 'pointer' }}
+                title="100% Width"
+              >
+                100%
+              </button>
+            </>
+          )}
+
+          <span style={{ color: '#cbd5e1', margin: '0 2px' }}>|</span>
+
+          {/* HTML / WYSIWYG Toggle */}
           <button
             type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploadingImage}
-            style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid #bbf7d0', backgroundColor: '#f0fdf4', color: '#166534', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}
-            title="Upload image to Azure Storage"
+            onClick={() => {
+              if (isHtmlMode) {
+                // Save from HTML view back into editor
+                editor.commands.setContent(htmlValue);
+                onChange(htmlValue);
+              } else {
+                // Read current from editor to HTML textarea
+                setHtmlValue(editor.getHTML());
+              }
+              setIsHtmlMode(!isHtmlMode);
+            }}
+            style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #fca5a5', backgroundColor: isHtmlMode ? '#fee2e2' : '#ffffff', color: '#b91c1c', fontSize: 12, cursor: 'pointer', fontWeight: 'bold' }}
+            title="Toggle HTML Source"
           >
-            {uploadingImage ? 'Uploading...' : '🖼️ Upload Image'}
+            {isHtmlMode ? '✍️ Visual' : '💻 HTML Source'}
           </button>
         </div>
       )}
 
       {/* Editor Content Area */}
       <div style={{ padding: '12px 16px', minHeight: 250, maxHeight: 600, overflowY: 'auto' }}>
-        <EditorContent editor={editor} />
+        {isHtmlMode ? (
+          <textarea
+            value={htmlValue}
+            onChange={(e) => {
+              setHtmlValue(e.target.value);
+              onChange(e.target.value);
+            }}
+            style={{
+              width: '100%',
+              minHeight: '230px',
+              border: 'none',
+              outline: 'none',
+              fontFamily: 'monospace',
+              fontSize: '14px',
+              lineHeight: '1.5',
+              resize: 'vertical',
+            }}
+          />
+        ) : (
+          <EditorContent editor={editor} />
+        )}
       </div>
 
       <style>{`
