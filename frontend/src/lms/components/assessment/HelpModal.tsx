@@ -8,6 +8,8 @@ interface HelpModalProps {
 export function HelpModal({ isOpen, onClose, questionText, supportVideoId }: HelpModalProps) {
   if (!isOpen) return null;
 
+  const cleanText = questionText ? questionText.replace(/<[^>]*>?/gm, '').trim() : '';
+
   return (
     <div
       style={{
@@ -35,7 +37,7 @@ export function HelpModal({ isOpen, onClose, questionText, supportVideoId }: Hel
           💡 Assessment Support & Guidance
         </h3>
         <p style={{ fontSize: '0.875rem', color: '#4b5563', marginBottom: '1rem' }}>
-          Questions about: <strong>"{questionText}"</strong>
+          Questions about: <strong>"{cleanText}"</strong>
         </p>
 
         {supportVideoId ? (

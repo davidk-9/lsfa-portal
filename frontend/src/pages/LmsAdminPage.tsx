@@ -4,6 +4,12 @@ import { lmsAdminApi, type KnowledgeEvidence, type Chapter, type LearningBlob, t
 import { settingsApi } from '../api';
 import { QuestionType } from '../lms/types/lms';
 import { LmsVideoPlayer } from '../lms/components/media/LmsVideoPlayer';
+import { LmsRichTextEditor } from '../components/LmsRichTextEditor';
+
+function stripHtml(html: string): string {
+  if (!html) return '';
+  return html.replace(/<[^>]*>?/gm, '').trim();
+}
 
 function parseVideoInput(val: string): { azureBlobUrl: string; vimeoId: string } {
   const trimmed = val.trim();
@@ -1321,7 +1327,7 @@ export function LmsAdminPage() {
                         </td>
                         <td style={{ padding: '12px 16px', fontWeight: 600, maxWidth: 300 }}>
                           <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {q.questionText}
+                            {stripHtml(q.questionText)}
                           </div>
                         </td>
                         <td style={{ padding: '12px 16px' }}>
@@ -1787,7 +1793,7 @@ export function LmsAdminPage() {
                             }
                           }}
                         />
-                        <span>❓ <strong>{q.questionText}</strong></span>
+                        <span>❓ <strong>{stripHtml(q.questionText)}</strong></span>
                       </label>
                     );
                   })}
@@ -1843,10 +1849,14 @@ export function LmsAdminPage() {
 
               {/* Question Text / Prompt */}
               {questionForm.type !== QuestionType.FillInBlanks && (
-                <label>
+                <div>
                   <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Question Text / Prompt:</div>
-                  <textarea rows={3} value={questionForm.questionText} onChange={(e) => setQuestionForm({ ...questionForm, questionText: e.target.value })} placeholder="Enter question text or prompt here..." style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }} />
-                </label>
+                  <LmsRichTextEditor
+                    content={questionForm.questionText}
+                    onChange={(html) => setQuestionForm({ ...questionForm, questionText: html })}
+                    placeholder="Enter question text or prompt here..."
+                  />
+                </div>
               )}
 
               {/* ── TYPE 1: Multiple Choice Single ───────────────────────────── */}
@@ -2091,17 +2101,16 @@ export function LmsAdminPage() {
               {/* ── TYPE 5: Fill in Blanks ────────────────────────────────────── */}
               {questionForm.type === QuestionType.FillInBlanks && (
                 <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <label>
+                  <div>
                     <div style={{ fontSize: 13, fontWeight: 700, color: '#334155', marginBottom: 4 }}>
                       Sentence Template (use &#123;0&#125;, &#123;1&#125;, &#123;2&#125; for inline dropdown placeholders):
                     </div>
-                    <textarea
-                      rows={2}
-                      value={questionForm.blankTemplate}
-                      onChange={(e) => setQuestionForm({ ...questionForm, blankTemplate: e.target.value })}
-                      style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc', fontSize: 13 }}
+                    <LmsRichTextEditor
+                      content={questionForm.blankTemplate}
+                      onChange={(html) => setQuestionForm({ ...questionForm, blankTemplate: html })}
+                      placeholder="During CPR, perform {0} compressions at a depth of {1}, followed by {2} rescue breaths."
                     />
-                  </label>
+                  </div>
 
                   <div style={{ fontSize: 13, fontWeight: 700, color: '#334155' }}>
                     Interactive Dropdown Blanks Configuration
@@ -2478,7 +2487,7 @@ export function LmsAdminPage() {
                             }
                           }}
                         />
-                        <span>❓ {q.questionText}</span>
+                        <span>❓ {stripHtml(q.questionText)}</span>
                       </label>
                     );
                   })}

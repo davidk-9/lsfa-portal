@@ -130,7 +130,7 @@ export function FillInBlanks({ questionText, questionData, value = [], onChange,
               const idx = currentBlankCounter++;
               return renderDropdown(idx);
             }
-            return <span key={pIdx}>{part}</span>;
+            return <span key={pIdx} style={{ display: 'contents' }} dangerouslySetInnerHTML={{ __html: part }} />;
           })}
         </div>
       </div>

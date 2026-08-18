@@ -170,9 +170,17 @@ export function AssessmentContainer() {
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
-          <h3 style={{ fontSize: '1.25rem', fontWeight: 600, color: '#111827', lineHeight: 1.5 }}>
-            {currentQuestion.questionText}
-          </h3>
+          {currentQuestion.type !== QuestionType.FillInBlanks ? (
+            <div
+              className="lms-rich-content"
+              style={{ fontSize: '1.25rem', fontWeight: 600, color: '#111827', lineHeight: 1.5, flex: 1 }}
+              dangerouslySetInnerHTML={{ __html: currentQuestion.questionText }}
+            />
+          ) : (
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 600, color: '#111827', lineHeight: 1.5, margin: 0, flex: 1 }}>
+              Complete the sentence(s) below:
+            </h3>
+          )}
           <button
             type="button"
             onClick={() => setIsHelpOpen(true)}
