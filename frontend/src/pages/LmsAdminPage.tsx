@@ -5,6 +5,7 @@ import { settingsApi } from '../api';
 import { QuestionType } from '../lms/types/lms';
 import { LmsVideoPlayer } from '../lms/components/media/LmsVideoPlayer';
 import { LmsRichTextEditor } from '../components/LmsRichTextEditor';
+import { QuestionRenderer } from '../lms/components/assessment/QuestionRenderer';
 
 function stripHtml(html: string): string {
   if (!html) return '';
@@ -115,6 +116,12 @@ export function LmsAdminPage() {
   });
 
   const [questionModal, setQuestionModal] = useState<{ open: boolean; item?: QuestionBankItem | null }>({ open: false });
+  const [questionPreviewModal, setQuestionPreviewModal] = useState<{ open: boolean; item?: QuestionBankItem | null }>({ open: false });
+  const [questionPreviewAnswer, setQuestionPreviewAnswer] = useState<any>(null);
+  const [blankRawOptions, setBlankRawOptions] = useState<Record<number, string>>({});
+  const [keSearchQuery, setKeSearchQuery] = useState('');
+  const [adminDragIndex, setAdminDragIndex] = useState<number | null>(null);
+
   const [questionForm, setQuestionForm] = useState<{
     type: number;
     questionText: string;
@@ -566,6 +573,13 @@ export function LmsAdminPage() {
         ? qData.fields
         : [{ name: 'incidentDate', label: 'Date of Incident', type: 'date', required: true }];
 
+      const initialRawOpts: Record<number, string> = {};
+      blanksList.forEach((b: any, idx: number) => {
+        initialRawOpts[idx] = Array.isArray(b.options) ? b.options.join(', ') : String(b.options || '');
+      });
+      setBlankRawOptions(initialRawOpts);
+      setKeSearchQuery('');
+
       setQuestionForm({
         type: q.type,
         questionText: q.questionText,
@@ -616,6 +630,8 @@ export function LmsAdminPage() {
           { name: 'description', label: 'Incident Description', type: 'textarea', required: true },
         ],
       });
+      setBlankRawOptions({ 0: '30, 15, 50', 1: '5-6 cm, 2 cm, 10 cm', 2: '2, 1, 5' });
+      setKeSearchQuery('');
       setQuestionModal({ open: true, item: null });
     }
   };
@@ -642,16 +658,58 @@ export function LmsAdminPage() {
         questionData = { pairs: cleanPairs };
         correctAnswer = { matches: cleanPairs.map((_, idx) => `${idx}-${idx}`) };
       } else if (questionForm.type === QuestionType.FillInBlanks) {
+        if (questionForm.blanksList.length === 0) {
+          alert('Please configure at least one blank for Fill-in-the-Blanks questions.');
+          return;
+        }
+
+        // Find placeholder indices in template like {0}, {1}, {2}
+        const placeholderMatches = Array.from(questionForm.blankTemplate.matchAll(/\{(\d+)\}/g));
+        const placeholderIndices = Array.from(new Set(placeholderMatches.map((m) => parseInt(m[1], 10))));
+
+        const missingPlaceholders = [];
+        for (let i = 0; i < questionForm.blanksList.length; i++) {
+          if (!placeholderIndices.includes(i)) {
+            missingPlaceholders.push(`{${i}}`);
+          }
+        }
+
+        if (missingPlaceholders.length > 0) {
+          alert(
+            `Sentence template validation error: You have configured ${questionForm.blanksList.length} blank(s), but placeholder(s) ${missingPlaceholders.join(', ')} are missing from your sentence template. Please add ${missingPlaceholders.join(', ')} to your sentence template.`
+          );
+          return;
+        }
+
+        if (placeholderIndices.length > questionForm.blanksList.length) {
+          alert(
+            `Sentence template validation error: Your template contains placeholders up to {${Math.max(...placeholderIndices)}}, but you have only configured ${questionForm.blanksList.length} blank(s). Please configure matching blanks or remove extra placeholders.`
+          );
+          return;
+        }
+
         questionData = {
           template: questionForm.blankTemplate,
-          blanks: questionForm.blanksList.map((b, idx) => ({
-            index: idx,
-            hint: b.hint,
-            options: Array.isArray(b.options) ? b.options : String(b.options).split(',').map((s) => s.trim()).filter(Boolean),
-          })),
+          blanks: questionForm.blanksList.map((b, idx) => {
+            const raw = blankRawOptions[idx];
+            const opts = raw !== undefined
+              ? raw.split(',').map((s) => s.trim()).filter(Boolean)
+              : (Array.isArray(b.options) ? b.options : String(b.options).split(',').map((s) => s.trim()).filter(Boolean));
+            return {
+              index: idx,
+              hint: b.hint,
+              options: opts.length > 0 ? opts : ['Choice A'],
+            };
+          }),
         };
         correctAnswer = {
-          blanks: questionForm.blanksList.map((b) => b.correctAnswer || (Array.isArray(b.options) ? b.options[0] : String(b.options).split(',')[0]?.trim()) || ''),
+          blanks: questionForm.blanksList.map((b, idx) => {
+            const raw = blankRawOptions[idx];
+            const opts = raw !== undefined
+              ? raw.split(',').map((s) => s.trim()).filter(Boolean)
+              : (Array.isArray(b.options) ? b.options : String(b.options).split(',').map((s) => s.trim()).filter(Boolean));
+            return b.correctAnswer || opts[0] || '';
+          }),
         };
       } else if (questionForm.type === QuestionType.FreeText) {
         questionData = { minWords: questionForm.freeTextMinWords || 1 };
@@ -1356,9 +1414,19 @@ export function LmsAdminPage() {
                             </span>
                           )}
                         </td>
-                        <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                          <button type="button" onClick={() => handleOpenQuestionModal(q)} style={{ padding: '4px 8px', marginRight: 6, backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 4, cursor: 'pointer' }}>Edit</button>
-                          <button type="button" onClick={() => handleDeleteQuestion(q.id)} style={{ padding: '4px 8px', backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 4, cursor: 'pointer' }}>Delete</button>
+                        <td style={{ padding: '12px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setQuestionPreviewAnswer(null);
+                              setQuestionPreviewModal({ open: true, item: q });
+                            }}
+                            style={{ padding: '4px 8px', marginRight: 6, backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+                          >
+                            👁️ Preview
+                          </button>
+                          <button type="button" onClick={() => handleOpenQuestionModal(q)} style={{ padding: '4px 8px', marginRight: 6, backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Edit</button>
+                          <button type="button" onClick={() => handleDeleteQuestion(q.id)} style={{ padding: '4px 8px', backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Delete</button>
                         </td>
                       </tr>
                     ))}
@@ -1972,14 +2040,42 @@ export function LmsAdminPage() {
               {questionForm.type === QuestionType.OrderItems && (
                 <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 14 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: '#334155', marginBottom: 4 }}>
-                    Sequence Items (Arrange in Target Correct Order using ▲ ▼)
+                    Sequence Items (Arrange in Target Correct Order using ⣿ Handle)
                   </div>
                   <p style={{ margin: '0 0 10px 0', fontSize: 12, color: '#64748b' }}>
-                    The list below defines the correct sequence. On assessment load, student choices are shuffled automatically.
+                    The list below defines the correct sequence. Drag items using ⣿ handle to reorder steps. On student assessment load, choices are shuffled automatically.
                   </p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {questionForm.orderItems.map((item, idx) => (
-                      <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#fff', padding: '6px 10px', border: '1px solid #e2e8f0', borderRadius: 6 }}>
+                      <div
+                        key={idx}
+                        draggable
+                        onDragStart={() => setAdminDragIndex(idx)}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          if (adminDragIndex === null || adminDragIndex === idx) return;
+                          const newItems = [...questionForm.orderItems];
+                          const dragged = newItems[adminDragIndex];
+                          newItems.splice(adminDragIndex, 1);
+                          newItems.splice(idx, 0, dragged);
+                          setAdminDragIndex(idx);
+                          setQuestionForm({ ...questionForm, orderItems: newItems });
+                        }}
+                        onDragEnd={() => setAdminDragIndex(null)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          background: adminDragIndex === idx ? '#eff6ff' : '#fff',
+                          padding: '6px 10px',
+                          border: adminDragIndex === idx ? '1px solid #2563eb' : '1px solid #e2e8f0',
+                          borderRadius: 6,
+                          cursor: 'grab',
+                        }}
+                      >
+                        <span style={{ fontSize: 14, color: '#94a3b8', cursor: 'grab', userSelect: 'none' }} title="Drag to reorder">
+                          ⣿
+                        </span>
                         <span style={{ fontSize: 11, fontWeight: 700, color: '#1e40af', width: 50 }}>Step #{idx + 1}</span>
                         <input
                           type="text"
@@ -1991,36 +2087,6 @@ export function LmsAdminPage() {
                           }}
                           style={{ flex: 1, padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 13 }}
                         />
-                        <button
-                          type="button"
-                          disabled={idx === 0}
-                          onClick={() => {
-                            if (idx === 0) return;
-                            const newItems = [...questionForm.orderItems];
-                            const tmp = newItems[idx];
-                            newItems[idx] = newItems[idx - 1];
-                            newItems[idx - 1] = tmp;
-                            setQuestionForm({ ...questionForm, orderItems: newItems });
-                          }}
-                          style={{ padding: '2px 6px', fontSize: 12, cursor: idx === 0 ? 'not-allowed' : 'pointer' }}
-                        >
-                          ▲
-                        </button>
-                        <button
-                          type="button"
-                          disabled={idx === questionForm.orderItems.length - 1}
-                          onClick={() => {
-                            if (idx === questionForm.orderItems.length - 1) return;
-                            const newItems = [...questionForm.orderItems];
-                            const tmp = newItems[idx];
-                            newItems[idx] = newItems[idx + 1];
-                            newItems[idx + 1] = tmp;
-                            setQuestionForm({ ...questionForm, orderItems: newItems });
-                          }}
-                          style={{ padding: '2px 6px', fontSize: 12, cursor: idx === questionForm.orderItems.length - 1 ? 'not-allowed' : 'pointer' }}
-                        >
-                          ▼
-                        </button>
                         <button
                           type="button"
                           onClick={() => {
@@ -2153,11 +2219,17 @@ export function LmsAdminPage() {
                             <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block' }}>Choices (comma-separated):</label>
                             <input
                               type="text"
-                              value={Array.isArray(blank.options) ? blank.options.join(', ') : blank.options}
+                              value={blankRawOptions[idx] ?? (Array.isArray(blank.options) ? blank.options.join(', ') : blank.options)}
                               onChange={(e) => {
-                                const opts = e.target.value.split(',').map((s) => s.trim()).filter(Boolean);
+                                const rawVal = e.target.value;
+                                setBlankRawOptions((prev) => ({ ...prev, [idx]: rawVal }));
+                                const opts = rawVal.split(',').map((s) => s.trim()).filter(Boolean);
                                 const newBlanks = [...questionForm.blanksList];
-                                newBlanks[idx] = { ...newBlanks[idx], options: opts, correctAnswer: opts.includes(blank.correctAnswer) ? blank.correctAnswer : opts[0] || '' };
+                                newBlanks[idx] = {
+                                  ...newBlanks[idx],
+                                  options: opts.length > 0 ? opts : [rawVal.trim()],
+                                  correctAnswer: opts.includes(blank.correctAnswer) ? blank.correctAnswer : opts[0] || '',
+                                };
                                 setQuestionForm({ ...questionForm, blanksList: newBlanks });
                               }}
                               placeholder="30, 15, 50"
@@ -2327,26 +2399,135 @@ export function LmsAdminPage() {
               )}
 
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Mapped Knowledge Evidence (KEs):</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 8, border: '1px solid #ccc', borderRadius: 4, maxHeight: 140, overflowY: 'auto' }}>
-                  {kes.map((k) => {
-                    const isChecked = questionForm.knowledgeEvidenceIds.includes(k.id);
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+                  Mapped Knowledge Evidence (KEs):
+                </div>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8, minHeight: 32, alignItems: 'center' }}>
+                  {questionForm.knowledgeEvidenceIds.map((id) => {
+                    const foundKe = kes.find((k) => k.id === id);
+                    if (!foundKe) return null;
                     return (
-                      <label key={k.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={(e) => {
-                            const updated = e.target.checked
-                              ? [...questionForm.knowledgeEvidenceIds, k.id]
-                              : questionForm.knowledgeEvidenceIds.filter((id) => id !== k.id);
-                            setQuestionForm({ ...questionForm, knowledgeEvidenceIds: updated });
+                      <span
+                        key={id}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          padding: '4px 10px',
+                          backgroundColor: '#eff6ff',
+                          color: '#1e40af',
+                          border: '1px solid #bfdbfe',
+                          borderRadius: 16,
+                          fontSize: 12,
+                          fontWeight: 600,
+                        }}
+                      >
+                        <span>{foundKe.code} &ndash; {foundKe.title}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setQuestionForm({
+                              ...questionForm,
+                              knowledgeEvidenceIds: questionForm.knowledgeEvidenceIds.filter((kId) => kId !== id),
+                            });
                           }}
-                        />
-                        <strong>{k.code}</strong> &ndash; {k.title}
-                      </label>
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#1d4ed8',
+                            cursor: 'pointer',
+                            fontWeight: 'bold',
+                            fontSize: 14,
+                            lineHeight: 1,
+                            padding: 0,
+                          }}
+                          title="Remove KE"
+                        >
+                          &times;
+                        </button>
+                      </span>
                     );
                   })}
+                  {questionForm.knowledgeEvidenceIds.length === 0 && (
+                    <span style={{ fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>
+                      No KEs mapped. Search and select Knowledge Evidence items below to map.
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="text"
+                    placeholder="Search Knowledge Evidence by code or title (e.g. KE1.1, CPR)..."
+                    value={keSearchQuery}
+                    onChange={(e) => setKeSearchQuery(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '6px 10px',
+                      borderRadius: 6,
+                      border: '1px solid #cbd5e1',
+                      fontSize: 12,
+                    }}
+                  />
+                  {keSearchQuery.trim().length > 0 && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '100%',
+                        left: 0,
+                        right: 0,
+                        zIndex: 10,
+                        backgroundColor: '#ffffff',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: 6,
+                        boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
+                        maxHeight: 180,
+                        overflowY: 'auto',
+                        marginTop: 4,
+                      }}
+                    >
+                      {kes
+                        .filter(
+                          (k) =>
+                            !questionForm.knowledgeEvidenceIds.includes(k.id) &&
+                            (k.code.toLowerCase().includes(keSearchQuery.toLowerCase()) ||
+                              k.title.toLowerCase().includes(keSearchQuery.toLowerCase()))
+                        )
+                        .map((k) => (
+                          <div
+                            key={k.id}
+                            onClick={() => {
+                              setQuestionForm({
+                                ...questionForm,
+                                knowledgeEvidenceIds: [...questionForm.knowledgeEvidenceIds, k.id],
+                              });
+                              setKeSearchQuery('');
+                            }}
+                            style={{
+                              padding: '8px 12px',
+                              fontSize: 12,
+                              cursor: 'pointer',
+                              borderBottom: '1px solid #f1f5f9',
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f8fafc')}
+                            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#ffffff')}
+                          >
+                            <strong style={{ color: '#1e40af' }}>{k.code}</strong> &ndash; {k.title}
+                          </div>
+                        ))}
+                      {kes.filter(
+                        (k) =>
+                          !questionForm.knowledgeEvidenceIds.includes(k.id) &&
+                          (k.code.toLowerCase().includes(keSearchQuery.toLowerCase()) ||
+                            k.title.toLowerCase().includes(keSearchQuery.toLowerCase()))
+                      ).length === 0 && (
+                        <div style={{ padding: '8px 12px', fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>
+                          No matching unmapped KEs found.
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -2623,6 +2804,82 @@ export function LmsAdminPage() {
                 style={{ padding: '8px 20px', backgroundColor: '#2563eb', color: '#ffffff', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}
               >
                 {importing ? 'Sanitizing & Migrating Assets...' : 'Sanitize & Migrate to Azure'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: Question Preview ────────────────────────────────────────────── */}
+      {questionPreviewModal.open && questionPreviewModal.item && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+          <div style={{ backgroundColor: '#ffffff', borderRadius: 12, padding: 24, maxWidth: 750, width: '100%', maxHeight: '90vh', overflowY: 'auto', border: '1px solid #cbd5e1', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, borderBottom: '1px solid #e2e8f0', paddingBottom: 12 }}>
+              <div>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#2563eb', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  👁️ Question Assessment Preview
+                </span>
+                <h3 style={{ margin: '4px 0 0 0', fontSize: 18, fontWeight: 700, color: '#0f172a' }}>
+                  Question Type #{questionPreviewModal.item.type} ({questionPreviewModal.item.points} pt{questionPreviewModal.item.points > 1 ? 's' : ''})
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setQuestionPreviewModal({ open: false })}
+                style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#64748b', lineHeight: 1 }}
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Formatted Question Prompt */}
+            <div style={{ backgroundColor: '#f8fafc', padding: 20, borderRadius: 8, border: '1px solid #e2e8f0', marginBottom: 20 }}>
+              {questionPreviewModal.item.type !== QuestionType.FillInBlanks ? (
+                <div
+                  className="lms-rich-content"
+                  style={{ fontSize: 16, fontWeight: 600, color: '#0f172a', marginBottom: 16 }}
+                  dangerouslySetInnerHTML={{ __html: questionPreviewModal.item.questionText }}
+                />
+              ) : (
+                <h4 style={{ margin: '0 0 16px 0', fontSize: 16, fontWeight: 600, color: '#0f172a' }}>
+                  Complete the sentence(s) below:
+                </h4>
+              )}
+
+              <QuestionRenderer
+                question={{
+                  id: questionPreviewModal.item.id,
+                  type: questionPreviewModal.item.type as QuestionType,
+                  questionText: questionPreviewModal.item.questionText,
+                  questionData: questionPreviewModal.item.questionData,
+                  points: questionPreviewModal.item.points,
+                }}
+                value={questionPreviewAnswer}
+                onChange={(val) => setQuestionPreviewAnswer(val)}
+              />
+            </div>
+
+            {/* Answer JSON Debug / Output Info */}
+            {questionPreviewAnswer !== null && (
+              <div style={{ padding: 12, backgroundColor: '#f1f5f9', borderRadius: 6, fontSize: 12, fontFamily: 'monospace', marginBottom: 20, border: '1px solid #cbd5e1' }}>
+                <strong>Student Selected Answer Payload:</strong> {JSON.stringify(questionPreviewAnswer)}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={() => setQuestionPreviewAnswer(null)}
+                style={{ padding: '6px 14px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}
+              >
+                Reset Selections
+              </button>
+              <button
+                type="button"
+                onClick={() => setQuestionPreviewModal({ open: false })}
+                style={{ padding: '8px 20px', backgroundColor: '#2563eb', color: '#ffffff', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}
+              >
+                Close Preview
               </button>
             </div>
           </div>

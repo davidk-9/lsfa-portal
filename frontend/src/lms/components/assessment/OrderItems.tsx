@@ -9,6 +9,7 @@ interface QuestionProps {
 export function OrderItems({ questionData, value, onChange }: QuestionProps) {
   const items = questionData?.items || [];
   const [currentOrder, setCurrentOrder] = useState<number[]>([]);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
   useEffect(() => {
     if (value && value.length === items.length) {
@@ -26,38 +27,68 @@ export function OrderItems({ questionData, value, onChange }: QuestionProps) {
     }
   }, [questionData]);
 
-  const moveItem = (index: number, direction: 'up' | 'down') => {
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    // Set transparent image or drag data if needed
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === index) return;
+
     const newOrder = [...currentOrder];
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= newOrder.length) return;
+    const draggedItem = newOrder[draggedIndex];
+    newOrder.splice(draggedIndex, 1);
+    newOrder.splice(index, 0, draggedItem);
 
-    const temp = newOrder[index];
-    newOrder[index] = newOrder[targetIndex];
-    newOrder[targetIndex] = temp;
-
+    setDraggedIndex(index);
     setCurrentOrder(newOrder);
     onChange(newOrder);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
       <p style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '0.5rem' }}>
-        Use the up/down controls to arrange items into the correct order:
+        Drag and drop the items below using the handle (⣿) to arrange them in the correct sequence:
       </p>
       {currentOrder.map((itemIdx, posIdx) => (
         <div
           key={posIdx}
+          draggable
+          onDragStart={(e) => handleDragStart(e, posIdx)}
+          onDragOver={(e) => handleDragOver(e, posIdx)}
+          onDragEnd={handleDragEnd}
           style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             padding: '0.875rem 1.25rem',
             borderRadius: '0.5rem',
-            border: '1px solid #e5e7eb',
-            backgroundColor: '#ffffff',
+            border: draggedIndex === posIdx ? '2px solid #2563eb' : '1px solid #e5e7eb',
+            backgroundColor: draggedIndex === posIdx ? '#eff6ff' : '#ffffff',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+            cursor: 'grab',
+            transition: 'all 0.15s ease-in-out',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <span
+              style={{
+                fontSize: '1.25rem',
+                color: '#94a3b8',
+                cursor: 'grab',
+                userSelect: 'none',
+                paddingRight: '0.25rem',
+              }}
+              title="Drag to reorder"
+            >
+              ⣿
+            </span>
             <span
               style={{
                 width: '2rem',
@@ -69,42 +100,14 @@ export function OrderItems({ questionData, value, onChange }: QuestionProps) {
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontWeight: 'bold',
+                fontSize: '0.875rem',
               }}
             >
               {posIdx + 1}
             </span>
-            <span style={{ fontSize: '1.125rem', fontWeight: 500 }}>{items[itemIdx]}</span>
-          </div>
-
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button
-              type="button"
-              disabled={posIdx === 0}
-              onClick={() => moveItem(posIdx, 'up')}
-              style={{
-                padding: '0.5rem 0.75rem',
-                borderRadius: '0.375rem',
-                border: '1px solid #d1d5db',
-                backgroundColor: posIdx === 0 ? '#f3f4f6' : '#ffffff',
-                cursor: posIdx === 0 ? 'not-allowed' : 'pointer',
-              }}
-            >
-              ▲
-            </button>
-            <button
-              type="button"
-              disabled={posIdx === currentOrder.length - 1}
-              onClick={() => moveItem(posIdx, 'down')}
-              style={{
-                padding: '0.5rem 0.75rem',
-                borderRadius: '0.375rem',
-                border: '1px solid #d1d5db',
-                backgroundColor: posIdx === currentOrder.length - 1 ? '#f3f4f6' : '#ffffff',
-                cursor: posIdx === currentOrder.length - 1 ? 'not-allowed' : 'pointer',
-              }}
-            >
-              ▼
-            </button>
+            <span style={{ fontSize: '1.125rem', fontWeight: 500, color: '#1f2937' }}>
+              {items[itemIdx]}
+            </span>
           </div>
         </div>
       ))}
