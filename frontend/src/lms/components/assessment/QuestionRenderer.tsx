@@ -41,7 +41,7 @@ export function QuestionRenderer({ question, value, onChange }: QuestionRenderer
       return <FreeText questionData={question.questionData} value={value} onChange={onChange} />;
 
     case QuestionType.Forms:
-      return <Forms questionData={question.questionData} value={value} onChange={onChange} />;
+      return <Forms questionText={question.questionText} questionData={question.questionData} value={value} onChange={onChange} />;
 
     default:
       return <p style={{ color: 'red' }}>Unsupported question type: {question.type}</p>;

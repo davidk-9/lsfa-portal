@@ -150,7 +150,7 @@ export function LmsAdminPage() {
     freeTextKeywords: string;
 
     // Type 7: Forms
-    formFields: Array<{ name: string; label: string; type: string; required: boolean }>;
+    formFields: Array<{ name: string; label: string; type: string; required: boolean; description?: string; width?: string }>;
   }>({
     type: QuestionType.MultipleChoiceSingle,
     questionText: '',
@@ -182,9 +182,9 @@ export function LmsAdminPage() {
     freeTextKeywords: 'danger, response, airway, breathing, CPR, defibrillator',
 
     formFields: [
-      { name: 'incidentDate', label: 'Date of Incident', type: 'date', required: true },
-      { name: 'location', label: 'Location', type: 'text', required: true },
-      { name: 'description', label: 'Incident Description', type: 'textarea', required: true },
+      { name: 'incidentDate', label: 'Date of Incident', type: 'date', required: true, description: 'Date when incident occurred', width: '100%' },
+      { name: 'location', label: 'Location', type: 'text', required: true, description: 'Specific location/site', width: '100%' },
+      { name: 'description', label: 'Incident Description', type: 'textarea', required: true, description: 'Detailed account of what happened', width: '100%' },
     ],
   });
 
@@ -570,8 +570,15 @@ export function LmsAdminPage() {
       const freeTextKeywords = Array.isArray(cAns.keywords) ? cAns.keywords.join(', ') : '';
 
       const formFields = Array.isArray(qData.fields) && qData.fields.length > 0
-        ? qData.fields
-        : [{ name: 'incidentDate', label: 'Date of Incident', type: 'date', required: true }];
+        ? qData.fields.map((f: any) => ({
+            name: f.name || 'fieldKey',
+            label: f.label || '',
+            type: f.type || 'text',
+            required: Boolean(f.required),
+            description: f.description || '',
+            width: f.width || '100%',
+          }))
+        : [{ name: 'incidentDate', label: 'Date of Incident', type: 'date', required: true, description: '', width: '100%' }];
 
       const initialRawOpts: Record<number, string> = {};
       blanksList.forEach((b: any, idx: number) => {
@@ -718,7 +725,41 @@ export function LmsAdminPage() {
           minScore: 0.6,
         };
       } else if (questionForm.type === QuestionType.Forms) {
-        const cleanFields = questionForm.formFields.filter((f) => f.name.trim());
+        if (questionForm.formFields.length === 0) {
+          alert('Please configure at least one form field.');
+          return;
+        }
+
+        // Validate template placeholder indices e.g. {0}, {1}, {0:label}, {0:field}, {0:vertical}
+        const placeholderMatches = Array.from(questionForm.questionText.matchAll(/\{(\d+)(?::[a-zA-Z]+)?\}/g));
+        const placeholderIndices = Array.from(new Set(placeholderMatches.map((m) => parseInt(m[1], 10))));
+
+        const maxIndexInTemplate = placeholderIndices.length > 0 ? Math.max(...placeholderIndices) : -1;
+        if (maxIndexInTemplate >= questionForm.formFields.length) {
+          alert(
+            `Form template validation error: Your prompt template contains placeholder {${maxIndexInTemplate}}, but you have only configured ${questionForm.formFields.length} field(s). Please configure matching fields or fix placeholder numbers.`
+          );
+          return;
+        }
+
+        const cleanFields = questionForm.formFields.map((f, idx) => {
+          let nameKey = f.name;
+          if (!nameKey || nameKey === 'fieldKey') {
+            nameKey = (f.label || `field_${idx + 1}`)
+              .replace(/[^a-zA-Z0-9\s]/g, '')
+              .replace(/(?:^\w|[A-Z]|\b\w)/g, (letter, i) => (i === 0 ? letter.toLowerCase() : letter.toUpperCase()))
+              .replace(/\s+/g, '');
+          }
+          return {
+            name: nameKey || `field_${idx + 1}`,
+            label: f.label || `Field #${idx + 1}`,
+            type: f.type || 'text',
+            required: Boolean(f.required),
+            description: f.description || '',
+            width: f.width || '100%',
+          };
+        });
+
         questionData = { fields: cleanFields };
         correctAnswer = { required: cleanFields.filter((f) => f.required).map((f) => f.name) };
       }
@@ -2321,75 +2362,142 @@ export function LmsAdminPage() {
               {/* ── TYPE 7: Forms / Observation Checklist ────────────────────── */}
               {questionForm.type === QuestionType.Forms && (
                 <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#334155' }}>
-                    Form Field Definitions
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#334155' }}>
+                      Form Fields Configuration
+                    </div>
+                    <span style={{ fontSize: 11, color: '#64748b' }}>
+                      Use &#123;0&#125;, &#123;0:label&#125;, &#123;0:field&#125;, or &#123;0:vertical&#125; in Question Text to place fields in tables/layout
+                    </span>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {questionForm.formFields.map((field, idx) => (
-                      <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto auto', gap: 8, alignItems: 'center', background: '#fff', padding: '6px 10px', border: '1px solid #e2e8f0', borderRadius: 6 }}>
-                        <input
-                          type="text"
-                          placeholder="Field Key (e.g. location)"
-                          value={field.name}
-                          onChange={(e) => {
-                            const newFields = [...questionForm.formFields];
-                            newFields[idx] = { ...newFields[idx], name: e.target.value };
-                            setQuestionForm({ ...questionForm, formFields: newFields });
-                          }}
-                          style={{ padding: '4px 6px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 }}
-                        />
-                        <input
-                          type="text"
-                          placeholder="Field Label (e.g. Incident Location)"
-                          value={field.label}
-                          onChange={(e) => {
-                            const newFields = [...questionForm.formFields];
-                            newFields[idx] = { ...newFields[idx], label: e.target.value };
-                            setQuestionForm({ ...questionForm, formFields: newFields });
-                          }}
-                          style={{ padding: '4px 6px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 }}
-                        />
-                        <select
-                          value={field.type}
-                          onChange={(e) => {
-                            const newFields = [...questionForm.formFields];
-                            newFields[idx] = { ...newFields[idx], type: e.target.value };
-                            setQuestionForm({ ...questionForm, formFields: newFields });
-                          }}
-                          style={{ padding: '4px 6px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 }}
-                        >
-                          <option value="text">Short Text</option>
-                          <option value="textarea">Paragraph Text</option>
-                          <option value="date">Date</option>
-                          <option value="checkbox">Checkbox (Pass/Fail)</option>
-                        </select>
-                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer' }}>
-                          <input
-                            type="checkbox"
-                            checked={field.required}
-                            onChange={(e) => {
-                              const newFields = [...questionForm.formFields];
-                              newFields[idx] = { ...newFields[idx], required: e.target.checked };
-                              setQuestionForm({ ...questionForm, formFields: newFields });
-                            }}
-                          />
-                          Req
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const newFields = questionForm.formFields.filter((_, i) => i !== idx);
-                            setQuestionForm({ ...questionForm, formFields: newFields });
-                          }}
-                          style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '2px 6px', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    ))}
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {questionForm.formFields.map((field, idx) => {
+                      // Auto-derive camelCase key from label for preview display
+                      const autoDerivedKey = (field.label || `field_${idx + 1}`)
+                        .replace(/[^a-zA-Z0-9\s]/g, '')
+                        .replace(/(?:^\w|[A-Z]|\b\w)/g, (letter, i) => (i === 0 ? letter.toLowerCase() : letter.toUpperCase()))
+                        .replace(/\s+/g, '');
+
+                      return (
+                        <div key={idx} style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: 6, padding: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <strong style={{ fontSize: 12, color: '#1e40af', background: '#eff6ff', padding: '2px 8px', borderRadius: 4, border: '1px solid #bfdbfe' }}>
+                                Field &#123;{idx}&#125;
+                              </strong>
+                              <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#64748b' }}>
+                                ID: {autoDerivedKey || field.name || `field_${idx + 1}`}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newFields = questionForm.formFields.filter((_, i) => i !== idx);
+                                setQuestionForm({ ...questionForm, formFields: newFields });
+                              }}
+                              style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '2px 6px', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
+                            >
+                              Remove Field
+                            </button>
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: 8, alignItems: 'center' }}>
+                            <div>
+                              <label style={{ fontSize: 11, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 2 }}>Field Label:</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. Date of Incident"
+                                value={field.label}
+                                onChange={(e) => {
+                                  const labelVal = e.target.value;
+                                  const autoName = labelVal
+                                    .replace(/[^a-zA-Z0-9\s]/g, '')
+                                    .replace(/(?:^\w|[A-Z]|\b\w)/g, (letter, i) => (i === 0 ? letter.toLowerCase() : letter.toUpperCase()))
+                                    .replace(/\s+/g, '');
+                                  const newFields = [...questionForm.formFields];
+                                  newFields[idx] = { ...newFields[idx], label: labelVal, name: autoName };
+                                  setQuestionForm({ ...questionForm, formFields: newFields });
+                                }}
+                                style={{ width: '100%', padding: '5px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{ fontSize: 11, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 2 }}>Type:</label>
+                              <select
+                                value={field.type}
+                                onChange={(e) => {
+                                  const newFields = [...questionForm.formFields];
+                                  newFields[idx] = { ...newFields[idx], type: e.target.value };
+                                  setQuestionForm({ ...questionForm, formFields: newFields });
+                                }}
+                                style={{ width: '100%', padding: '5px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 }}
+                              >
+                                <option value="text">Short Text</option>
+                                <option value="textarea">Paragraph Text</option>
+                                <option value="date">Date</option>
+                                <option value="checkbox">Checkbox (Pass/Fail)</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label style={{ fontSize: 11, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 2 }}>Width (% or px):</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. 100%, 50%"
+                                value={field.width || '100%'}
+                                onChange={(e) => {
+                                  const newFields = [...questionForm.formFields];
+                                  newFields[idx] = { ...newFields[idx], width: e.target.value };
+                                  setQuestionForm({ ...questionForm, formFields: newFields });
+                                }}
+                                style={{ width: '100%', padding: '5px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 }}
+                              />
+                            </div>
+
+                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer', marginTop: 16 }}>
+                              <input
+                                type="checkbox"
+                                checked={field.required}
+                                onChange={(e) => {
+                                  const newFields = [...questionForm.formFields];
+                                  newFields[idx] = { ...newFields[idx], required: e.target.checked };
+                                  setQuestionForm({ ...questionForm, formFields: newFields });
+                                }}
+                              />
+                              Req
+                            </label>
+                          </div>
+
+                          <div>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 2 }}>Field Description / AI Guidance:</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. Provide concise summary of incident time, place, and witnesses"
+                              value={field.description || ''}
+                              onChange={(e) => {
+                                const newFields = [...questionForm.formFields];
+                                newFields[idx] = { ...newFields[idx], description: e.target.value };
+                                setQuestionForm({ ...questionForm, formFields: newFields });
+                              }}
+                              style={{ width: '100%', padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 11, color: '#475569' }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
                     <button
                       type="button"
-                      onClick={() => setQuestionForm({ ...questionForm, formFields: [...questionForm.formFields, { name: '', label: '', type: 'text', required: true }] })}
+                      onClick={() =>
+                        setQuestionForm({
+                          ...questionForm,
+                          formFields: [
+                            ...questionForm.formFields,
+                            { name: '', label: `Field #${questionForm.formFields.length + 1}`, type: 'text', required: true, description: '', width: '100%' },
+                          ],
+                        })
+                      }
                       style={{ marginTop: 4, alignSelf: 'flex-start', padding: '4px 12px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
                     >
                       + Add Field

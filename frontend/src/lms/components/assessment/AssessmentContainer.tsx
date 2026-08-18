@@ -170,7 +170,7 @@ export function AssessmentContainer() {
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
-          {currentQuestion.type !== QuestionType.FillInBlanks ? (
+          {currentQuestion.type !== QuestionType.FillInBlanks && currentQuestion.type !== QuestionType.Forms ? (
             <div
               className="lms-rich-content"
               style={{ fontSize: '1.25rem', fontWeight: 600, color: '#111827', lineHeight: 1.5, flex: 1 }}
@@ -178,7 +178,7 @@ export function AssessmentContainer() {
             />
           ) : (
             <h3 style={{ fontSize: '1.25rem', fontWeight: 600, color: '#111827', lineHeight: 1.5, margin: 0, flex: 1 }}>
-              Complete the sentence(s) below:
+              {currentQuestion.type === QuestionType.Forms ? 'Fill out the form / checklist below:' : 'Complete the sentence(s) below:'}
             </h3>
           )}
           <button
