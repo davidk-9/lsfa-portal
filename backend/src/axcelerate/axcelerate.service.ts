@@ -154,6 +154,16 @@ export class AxcelerateService {
     });
   }
 
+  // GET course/enrolments — get all student enrolments for a workshop instance
+  async getWorkshopEnrolments(instanceId: number): Promise<any[]> {
+    const result = await this.get('course/enrolments', {
+      instanceID: instanceId,
+      type: 'w',
+      displayLength: 5000,
+    });
+    return Array.isArray(result) ? result : [];
+  }
+
   // PUT course/enrolment — set a single custom field on a student's workshop enrolment.
   async putEnrolmentCustomField(
     instanceId: number,

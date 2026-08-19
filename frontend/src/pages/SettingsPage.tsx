@@ -1675,6 +1675,7 @@ function WpSyncTab({ val, set }: { val: (k: string) => string; set: (k: string, 
       </SettingSection>
 
       <AxcelerateSyncSection />
+      <AxcelerateEnrolmentsSyncSection />
     </div>
   );
 }
@@ -1753,6 +1754,85 @@ function AxcelerateSyncSection() {
                 </div>
               )}
            </div>
+        )}
+      </div>
+    </SettingSection>
+  );
+}
+
+function AxcelerateEnrolmentsSyncSection() {
+  const [syncing, setSyncing] = useState(false);
+  const [status, setStatus] = useState<any>(null);
+
+  useEffect(() => {
+    let interval: any;
+    if (syncing) {
+      interval = setInterval(async () => {
+        try {
+          const res = await api.get('/contacts/enrolments-sync/status');
+          setStatus(res.data);
+          if (!res.data.isSyncing) {
+            setSyncing(false);
+            clearInterval(interval);
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [syncing]);
+
+  const startSync = async () => {
+    try {
+      await api.post('/contacts/enrolments-sync');
+      setSyncing(true);
+      setStatus({ totalWorkshops: 0, currentWorkshop: 0, totalEnrolmentsSynced: 0, isSyncing: true, errors: [] });
+    } catch (e) {
+      alert('Failed to start enrolment sync');
+    }
+  };
+
+  return (
+    <SettingSection title="Axcelerate Student Enrolments Sync">
+      <div style={{ padding: '16px' }}>
+        <p style={{ fontSize: 13, color: '#475569', marginBottom: 12 }}>
+          Fetches student enrolments from Axcelerate for all workshop instances (`/course/enrolments?type=w`) and restores student enrolment records with their real Axcelerate statuses and course codes.
+        </p>
+
+        <button
+          className="btn-save"
+          onClick={startSync}
+          disabled={syncing}
+          style={{ marginBottom: 16 }}
+        >
+          {syncing ? '⟳ Syncing Enrolments...' : 'Sync Axcelerate Enrolments'}
+        </button>
+
+        {status && (
+          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: '12px 16px', marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, fontSize: 13, fontFamily: 'monospace' }}>
+              <span style={{ width: 190, color: '#334155', flexShrink: 0 }}>Axcelerate.Enrolments</span>
+              <div style={{ flex: 1, background: '#e2e8f0', borderRadius: 4, height: 8, overflow: 'hidden' }}>
+                <div style={{ width: `${status.totalWorkshops > 0 ? (status.currentWorkshop / status.totalWorkshops) * 100 : 0}%`, background: !status.isSyncing ? '#16a34a' : '#3b82f6', height: '100%', transition: 'width 0.3s' }} />
+              </div>
+              <span style={{ color: '#64748b', width: 100, textAlign: 'right', flexShrink: 0 }}>
+                {status.currentWorkshop.toLocaleString()}/{status.totalWorkshops.toLocaleString()}
+              </span>
+              <span style={{ color: '#475569', width: 120, flexShrink: 0 }}>
+                {status.totalEnrolmentsSynced.toLocaleString()} enrolments
+              </span>
+            </div>
+            {status.errors && status.errors.length > 0 && (
+              <div style={{ marginTop: 10, color: '#92400e', fontSize: 12 }}>
+                <strong>Warnings ({status.errors.length}):</strong>
+                <ul style={{ margin: '4px 0 0 16px', maxHeight: '100px', overflowY: 'auto' }}>
+                  {status.errors.slice(0, 10).map((e: string, i: number) => <li key={i}>{e}</li>)}
+                  {status.errors.length > 10 && <li>...and {status.errors.length - 10} more errors.</li>}
+                </ul>
+              </div>
+            )}
+          </div>
         )}
       </div>
     </SettingSection>

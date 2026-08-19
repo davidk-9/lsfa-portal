@@ -169,4 +169,19 @@ export class ContactsController {
   async getBulkSyncStatus() {
     return this.contactsService.getBulkSyncStatus();
   }
+
+  @UseGuards(RolesGuard)
+  @Roles('SUPER_USER', 'ADMIN')
+  @Post('enrolments-sync')
+  async syncAxcelerateEnrolments() {
+    this.contactsService.runEnrolmentSyncJob().catch(e => console.error('Enrolment sync failed:', e));
+    return { success: true, message: 'Axcelerate enrolment sync started' };
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles('SUPER_USER', 'ADMIN')
+  @Get('enrolments-sync/status')
+  async getEnrolmentSyncStatus() {
+    return this.contactsService.getEnrolmentSyncStatus();
+  }
 }

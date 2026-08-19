@@ -13,6 +13,14 @@ export class ContactsService {
     errors: [] as string[],
   };
 
+  private isEnrolmentSyncing = false;
+  private enrolmentSyncStatus = {
+    totalWorkshops: 0,
+    currentWorkshop: 0,
+    totalEnrolmentsSynced: 0,
+    errors: [] as string[],
+  };
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly axcelerate: AxcelerateService,
@@ -1123,6 +1131,17 @@ export class ContactsService {
 
     this.logger.log(`Handling workshop enrolment webhook (${type}): axContactId=${axContactId}, instanceId=${instanceId}, status=${axStatus}`);
 
+    // Resolve courseCodeStr
+    let courseCodeStr = String(enrolmentPayload?.workshop?.code ?? enrolmentPayload?.workshop?.courseCode ?? '').trim();
+    if (!courseCodeStr) {
+      try {
+        const detail = await this.axcelerate.getInstanceDetail(instanceId);
+        courseCodeStr = String(detail?.CODE ?? detail?.coursename ?? '').trim();
+      } catch (err: any) {
+        this.logger.warn(`Could not resolve course code for workshop instance ${instanceId}: ${err.message}`);
+      }
+    }
+
     // 1. Ensure local Contact record exists
     let contact = await this.prisma.contact.findUnique({
       where: { contactId: axContactId },
@@ -1180,21 +1199,133 @@ export class ContactsService {
         data: {
           axStatus: axStatus ?? existing.axStatus,
           isActive: true,
+          ...(courseCodeStr ? { courseCodeStr } : {}),
           ...(learningPlanId ? { learningPlanId } : {}),
         },
       });
-      this.logger.log(`Updated enrolment ${existing.id} with status=${axStatus}`);
+      this.logger.log(`Updated enrolment ${existing.id} with status=${axStatus}, courseCodeStr=${courseCodeStr}`);
     } else {
       const created = await this.prisma.lmsEnrollment.create({
         data: {
           contactId: contact.id,
           instanceId,
+          courseCodeStr: courseCodeStr || null,
           learningPlanId,
           axStatus,
           isActive: true,
         },
       });
-      this.logger.log(`Created new enrolment ${created.id} for contactId=${contact.id}, instanceId=${instanceId}, axStatus=${axStatus}`);
+      this.logger.log(`Created new enrolment ${created.id} for contactId=${contact.id}, instanceId=${instanceId}, axStatus=${axStatus}, courseCodeStr=${courseCodeStr}`);
+    }
+  }
+
+  async getEnrolmentSyncStatus() {
+    return {
+      isSyncing: this.isEnrolmentSyncing,
+      ...this.enrolmentSyncStatus,
+    };
+  }
+
+  async runEnrolmentSyncJob() {
+    if (this.isEnrolmentSyncing) return;
+
+    this.isEnrolmentSyncing = true;
+    this.enrolmentSyncStatus = {
+      totalWorkshops: 0,
+      currentWorkshop: 0,
+      totalEnrolmentsSynced: 0,
+      errors: [],
+    };
+
+    try {
+      // 1. Get all workshop instance IDs from WorkshopProgress
+      const progressRows = await this.prisma.workshopProgress.findMany({
+        select: { instanceId: true },
+        orderBy: { instanceId: 'desc' },
+      });
+
+      const instanceIds = progressRows.map((r) => r.instanceId);
+      this.enrolmentSyncStatus.totalWorkshops = instanceIds.length;
+
+      this.logger.log(`Starting Axcelerate Enrolments sync for ${instanceIds.length} workshop instances...`);
+
+      for (const instanceId of instanceIds) {
+        try {
+          // Throttle API call (350ms delay) to stay comfortably under Axcelerate rate limits
+          await new Promise((res) => setTimeout(res, 350));
+
+          const enrollees = await this.axcelerate.getWorkshopEnrolments(instanceId);
+
+          for (const item of enrollees) {
+            const axContactId = item.CONTACTID ? Number(item.CONTACTID) : null;
+            if (!axContactId) continue;
+
+            const axStatus = item.STATUS ? String(item.STATUS) : null;
+            const courseCodeStr = item.CODE ? String(item.CODE).trim() : null;
+
+            // Ensure local Contact exists
+            let contact = await this.prisma.contact.findUnique({
+              where: { contactId: axContactId },
+            });
+
+            if (!contact) {
+              try {
+                contact = await this.syncSingleContactById(axContactId);
+              } catch (err: any) {
+                this.logger.warn(`Could not sync contact ${axContactId} for enrolment on instance ${instanceId}: ${err.message}`);
+                continue;
+              }
+            }
+
+            if (!contact) continue;
+
+            // Find existing enrolment or create
+            const existing = await this.prisma.lmsEnrollment.findFirst({
+              where: {
+                contactId: contact.id,
+                instanceId,
+              },
+            });
+
+            if (existing) {
+              await this.prisma.lmsEnrollment.update({
+                where: { id: existing.id },
+                data: {
+                  axStatus: axStatus ?? existing.axStatus,
+                  courseCodeStr: courseCodeStr ?? existing.courseCodeStr,
+                  isActive: true,
+                },
+              });
+            } else {
+              await this.prisma.lmsEnrollment.create({
+                data: {
+                  contactId: contact.id,
+                  instanceId,
+                  courseCodeStr,
+                  learningPlanId: null, // Axcelerate enrolments use Axcelerate LMS, no learning plan assigned
+                  axStatus,
+                  isActive: true,
+                },
+              });
+            }
+
+            this.enrolmentSyncStatus.totalEnrolmentsSynced++;
+          }
+        } catch (err: any) {
+          const errMsg = `Workshop instance ${instanceId}: ${err?.message || err}`;
+          this.logger.error(`Error syncing enrolments for workshop ${instanceId}: ${err?.message}`);
+          this.enrolmentSyncStatus.errors.push(errMsg);
+        }
+
+        this.enrolmentSyncStatus.currentWorkshop++;
+      }
+
+      this.logger.log(`Axcelerate Enrolments sync complete: ${this.enrolmentSyncStatus.totalEnrolmentsSynced} enrolments synced across ${this.enrolmentSyncStatus.totalWorkshops} workshops.`);
+    } catch (err: any) {
+      this.logger.error(`Fatal error in runEnrolmentSyncJob: ${err.message}`);
+      this.enrolmentSyncStatus.errors.push(`Fatal error: ${err.message}`);
+    } finally {
+      this.isEnrolmentSyncing = false;
     }
   }
 
