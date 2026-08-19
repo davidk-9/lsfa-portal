@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams, useLocation } from 'react-rout
 import { lmsAdminApi, type KnowledgeEvidence, type Chapter, type LearningBlob } from '../api/lmsAdmin';
 import { LmsRichTextEditor } from '../components/LmsRichTextEditor';
 import { LmsVideoPlayer } from '../lms/components/media/LmsVideoPlayer';
+import { SearchableTagPicker } from '../components/SearchableTagPicker';
 
 function parseVideoInput(val: string): { azureBlobUrl: string; vimeoId: string } {
   const trimmed = val.trim();
@@ -52,6 +53,7 @@ export function LmsBlockEditorPage() {
   const [kes, setKes] = useState<KnowledgeEvidence[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [summarizingTitle, setSummarizingTitle] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   // Preview and Axcelerate Importer Modals
@@ -114,6 +116,25 @@ export function LmsBlockEditorPage() {
       console.error('Failed to load block editor data:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAutoSummarizeTitle = async () => {
+    const textToSummarize = description || contentHtml;
+    if (!textToSummarize || !textToSummarize.trim()) {
+      alert('Please enter a description or content before summarizing a title.');
+      return;
+    }
+    setSummarizingTitle(true);
+    try {
+      const res = await lmsAdminApi.summarizeBlobTitle(textToSummarize);
+      if (res.data?.summary) {
+        setTitle(res.data.summary);
+      }
+    } catch (err: any) {
+      alert(`Error summarizing title: ${err?.response?.data?.message || err.message}`);
+    } finally {
+      setSummarizingTitle(false);
     }
   };
 
@@ -269,16 +290,35 @@ export function LmsBlockEditorPage() {
             Block Metadata & Mapping
           </h2>
 
-          <label>
-            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Block Title:</div>
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>Block Title:</div>
+              <button
+                type="button"
+                onClick={handleAutoSummarizeTitle}
+                disabled={summarizingTitle}
+                style={{
+                  padding: '4px 10px',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  backgroundColor: '#f3e8ff',
+                  color: '#6b21a8',
+                  border: '1px solid #d8b4fe',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                }}
+              >
+                {summarizingTitle ? 'Summarizing...' : '✨ AI Summarize Title'}
+              </button>
+            </div>
             <input
               type="text"
-              placeholder="e.g. DRSABCD & Primary Assessment Protocols"
+              placeholder="e.g. DRSABCD & Primary Assessment Protocols (Leave empty for auto-summary on save)"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 14 }}
             />
-          </label>
+          </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <label>
@@ -311,27 +351,17 @@ export function LmsBlockEditorPage() {
 
           <div>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Mapped Knowledge Evidences (KEs):</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10, border: '1px solid #cbd5e1', borderRadius: 6, maxHeight: 140, overflowY: 'auto', backgroundColor: '#f8fafc' }}>
-              {kes.map((k) => {
-                const isChecked = knowledgeEvidenceIds.includes(k.id);
-                return (
-                  <label key={k.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={isChecked}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setKnowledgeEvidenceIds([...knowledgeEvidenceIds, k.id]);
-                        } else {
-                          setKnowledgeEvidenceIds(knowledgeEvidenceIds.filter((id) => id !== k.id));
-                        }
-                      }}
-                    />
-                    <span><strong>{k.code}</strong> &ndash; {k.title}</span>
-                  </label>
-                );
-              })}
-            </div>
+            <SearchableTagPicker
+              items={kes.map((k) => ({
+                id: k.id,
+                label: `${k.code} – ${k.title}`,
+                badge: k.code,
+              }))}
+              selectedIds={knowledgeEvidenceIds}
+              onSelect={(keId) => setKnowledgeEvidenceIds([...knowledgeEvidenceIds, String(keId)])}
+              onDeselect={(keId) => setKnowledgeEvidenceIds(knowledgeEvidenceIds.filter((id) => id !== String(keId)))}
+              placeholder="Search KEs by code or title..."
+            />
           </div>
 
           <label>

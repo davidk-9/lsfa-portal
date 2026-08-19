@@ -44,6 +44,7 @@ export interface LearningBlob {
 
 export interface QuestionBankItem {
   id: string;
+  title?: string;
   type: number;
   questionText: string;
   questionData?: any;
@@ -64,10 +65,10 @@ export interface QuestionBank {
   description?: string;
   courseCodeId?: number | null;
   courseCode?: { id: number; code: string; name: string };
-  questions?: Array<{ id: string; questionText: string; type: number; points?: number }>;
+  questions?: Array<{ id: string; title?: string; questionText: string; type: number; points?: number }>;
   isLocked?: boolean;
   publishedPlans?: string[];
-  _count?: { plans: number };
+  _count?: { plans: number; planQuestionBanks?: number };
 }
 
 export interface LearningPlan {
@@ -90,6 +91,11 @@ export interface LearningPlan {
     sortOrder: number;
     points?: number;
     question: QuestionBankItem;
+  }>;
+  planQuestionBanks?: Array<{
+    questionBankId: string;
+    sortOrder: number;
+    questionBank: QuestionBank;
   }>;
   questionBanks?: QuestionBank[];
   _count?: { lmsEnrollments: number };
@@ -164,7 +170,12 @@ export const lmsAdminApi = {
 
   // Question Bank Items
   getQuestions: () => api.get<QuestionBankItem[]>('/lms-admin/questions'),
+  summarizeQuestionTitle: (text: string) =>
+    api.post<{ summary: string }>('/lms-admin/questions/summarize', { text }),
+  summarizeBlobTitle: (text: string) =>
+    api.post<{ summary: string }>('/lms-admin/blobs/summarize', { text }),
   createQuestion: (data: {
+    title?: string;
     type: number;
     questionText: string;
     questionData?: any;
@@ -177,6 +188,7 @@ export const lmsAdminApi = {
   updateQuestion: (
     id: string,
     data: {
+      title?: string;
       type?: number;
       questionText?: string;
       questionData?: any;
@@ -205,6 +217,8 @@ export const lmsAdminApi = {
     planId: number,
     items: Array<{ chapterId: string; sortOrder: number }>,
   ) => api.post<LearningPlan>(`/lms-admin/plans/${planId}/chapters`, { items }),
-  setPlanQuestionBanks: (planId: number, bankIds: string[]) =>
-    api.post<LearningPlan>(`/lms-admin/plans/${planId}/question-banks`, { bankIds }),
+  setPlanQuestionBanks: (
+    planId: number,
+    bankItems: string[] | Array<{ questionBankId: string; sortOrder: number }>,
+  ) => api.post<LearningPlan>(`/lms-admin/plans/${planId}/question-banks`, { bankItems }),
 };

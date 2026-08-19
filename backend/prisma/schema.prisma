@@ -374,9 +374,9 @@ model LearningPlan {
   courseCode       CourseCode             @relation(fields: [courseCodeId], references: [id], onDelete: Cascade)
   planQuestions    LearningPlanQuestion[]
   planChapters     LearningPlanChapter[]
+  planQuestionBanks LearningPlanQuestionBank[]
   workshopProgress WorkshopProgress[]
   lmsEnrollments   LmsEnrollment[]
-  questionBanks    LmsQuestionBank[]      @relation("LearningPlanQuestionBanks")
 
   @@unique([courseCodeId, version])
   @@index([courseCodeId])
@@ -413,21 +413,22 @@ model LmsChapter {
 }
 
 model LmsQuestionBank {
-  id           String         @id @default(uuid())
-  name         String
-  description  String?
-  courseCodeId Int?
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  courseCode   CourseCode?    @relation(fields: [courseCodeId], references: [id], onDelete: SetNull)
-  questions    LmsQuestion[]  @relation("QuestionBankQuestions")
-  plans        LearningPlan[] @relation("LearningPlanQuestionBanks")
+  id               String                     @id @default(uuid())
+  name             String
+  description      String?
+  courseCodeId     Int?
+  createdAt        DateTime                   @default(now())
+  updatedAt        DateTime                   @updatedAt
+  courseCode       CourseCode?                @relation(fields: [courseCodeId], references: [id], onDelete: SetNull)
+  questions        LmsQuestion[]              @relation("QuestionBankQuestions")
+  planQuestionBanks LearningPlanQuestionBank[]
 
   @@index([courseCodeId])
 }
 
 model LmsQuestion {
   id                    String                 @id @default(uuid())
+  title                 String?
   type                  Int                    // QuestionType enum (1-7)
   questionText          String
   questionData          Json?                  @db.JsonB
@@ -495,6 +496,18 @@ model LearningPlanChapter {
   chapter        LmsChapter   @relation(fields: [chapterId], references: [id], onDelete: Cascade)
 
   @@id([learningPlanId, chapterId])
+  @@index([learningPlanId, sortOrder])
+}
+
+model LearningPlanQuestionBank {
+  learningPlanId Int
+  questionBankId String
+  sortOrder      Int             @default(0)
+  addedAt        DateTime        @default(now())
+  learningPlan   LearningPlan    @relation(fields: [learningPlanId], references: [id], onDelete: Cascade)
+  questionBank   LmsQuestionBank @relation(fields: [questionBankId], references: [id], onDelete: Cascade)
+
+  @@id([learningPlanId, questionBankId])
   @@index([learningPlanId, sortOrder])
 }
 

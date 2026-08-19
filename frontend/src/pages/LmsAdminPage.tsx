@@ -6,6 +6,7 @@ import { QuestionType } from '../lms/types/lms';
 import { LmsVideoPlayer } from '../lms/components/media/LmsVideoPlayer';
 import { LmsRichTextEditor } from '../components/LmsRichTextEditor';
 import { QuestionRenderer } from '../lms/components/assessment/QuestionRenderer';
+import { SearchableTagPicker } from '../components/SearchableTagPicker';
 
 function stripHtml(html: string): string {
   if (!html) return '';
@@ -83,10 +84,9 @@ export function LmsAdminPage() {
   const [chapterSequencer, setChapterBlobsSequencer] = useState<string[]>([]);
 
   const [bankModal, setBankModal] = useState<{ open: boolean; item?: QuestionBank | null }>({ open: false });
-  const [bankForm, setBankForm] = useState<{ name: string; description: string; courseCodeId: number | null; questionIds: string[] }>({
+  const [bankForm, setBankForm] = useState<{ name: string; description: string; questionIds: string[] }>({
     name: '',
     description: '',
-    courseCodeId: null,
     questionIds: [],
   });
 
@@ -119,10 +119,11 @@ export function LmsAdminPage() {
   const [questionPreviewModal, setQuestionPreviewModal] = useState<{ open: boolean; item?: QuestionBankItem | null }>({ open: false });
   const [questionPreviewAnswer, setQuestionPreviewAnswer] = useState<any>(null);
   const [blankRawOptions, setBlankRawOptions] = useState<Record<number, string>>({});
-  const [keSearchQuery, setKeSearchQuery] = useState('');
   const [adminDragIndex, setAdminDragIndex] = useState<number | null>(null);
+  const [summarizingQuestionTitle, setSummarizingQuestionTitle] = useState(false);
 
   const [questionForm, setQuestionForm] = useState<{
+    title: string;
     type: number;
     questionText: string;
     benchmarkAnswer: string;
@@ -152,6 +153,7 @@ export function LmsAdminPage() {
     // Type 7: Forms
     formFields: Array<{ name: string; label: string; type: string; required: boolean; description?: string; width?: string }>;
   }>({
+    title: '',
     type: QuestionType.MultipleChoiceSingle,
     questionText: '',
     benchmarkAnswer: '',
@@ -196,8 +198,7 @@ export function LmsAdminPage() {
     description: string;
     isDefault: boolean;
     selectedChapterIds: string[];
-    selectedBankIds: string[];
-    selectedQuestionIds: string[];
+    assessmentItems: Array<{ id: string; type: 'bank' | 'question' }>;
   }>({
     courseCodeId: 0,
     version: 'v1.0',
@@ -205,8 +206,7 @@ export function LmsAdminPage() {
     description: '',
     isDefault: true,
     selectedChapterIds: [],
-    selectedBankIds: [],
-    selectedQuestionIds: [],
+    assessmentItems: [],
   });
 
   useEffect(() => {
@@ -485,7 +485,6 @@ export function LmsAdminPage() {
       setBankForm({
         name: bank.name,
         description: bank.description || '',
-        courseCodeId: bank.courseCodeId || null,
         questionIds: bank.questions?.map((q) => q.id) || [],
       });
       setBankModal({ open: true, item: bank });
@@ -493,7 +492,6 @@ export function LmsAdminPage() {
       setBankForm({
         name: '',
         description: '',
-        courseCodeId: selectedCourseCodeId || (courseCodes[0]?.id ?? null),
         questionIds: [],
       });
       setBankModal({ open: true, item: null });
@@ -503,8 +501,9 @@ export function LmsAdminPage() {
   const handleSaveBank = async () => {
     try {
       const payload = {
-        ...bankForm,
-        courseCodeId: bankForm.courseCodeId || undefined,
+        name: bankForm.name,
+        description: bankForm.description,
+        questionIds: bankForm.questionIds,
       };
       if (bankModal.item) {
         await lmsAdminApi.updateQuestionBank(bankModal.item.id, payload);
@@ -532,6 +531,25 @@ export function LmsAdminPage() {
   };
 
   // ── Question Actions ─────────────────────────────────────────────────────────
+  const handleAutoSummarizeQuestionTitle = async () => {
+    const textToSummarize = questionForm.questionText;
+    if (!textToSummarize || !textToSummarize.trim()) {
+      alert('Please enter question text before summarizing a title.');
+      return;
+    }
+    setSummarizingQuestionTitle(true);
+    try {
+      const res = await lmsAdminApi.summarizeQuestionTitle(textToSummarize);
+      if (res.data?.summary) {
+        setQuestionForm((prev) => ({ ...prev, title: res.data.summary }));
+      }
+    } catch (err: any) {
+      alert(`Error summarizing title: ${err?.response?.data?.message || err.message}`);
+    } finally {
+      setSummarizingQuestionTitle(false);
+    }
+  };
+
   const handleOpenQuestionModal = (q?: QuestionBankItem) => {
     if (q) {
       const qData = q.questionData || {};
@@ -585,9 +603,9 @@ export function LmsAdminPage() {
         initialRawOpts[idx] = Array.isArray(b.options) ? b.options.join(', ') : String(b.options || '');
       });
       setBlankRawOptions(initialRawOpts);
-      setKeSearchQuery('');
 
       setQuestionForm({
+        title: q.title || '',
         type: q.type,
         questionText: q.questionText,
         benchmarkAnswer: q.benchmarkAnswer || '',
@@ -608,6 +626,7 @@ export function LmsAdminPage() {
       setQuestionModal({ open: true, item: q });
     } else {
       setQuestionForm({
+        title: '',
         type: QuestionType.MultipleChoiceSingle,
         questionText: '',
         benchmarkAnswer: '',
@@ -638,7 +657,6 @@ export function LmsAdminPage() {
         ],
       });
       setBlankRawOptions({ 0: '30, 15, 50', 1: '5-6 cm, 2 cm, 10 cm', 2: '2, 1, 5' });
-      setKeSearchQuery('');
       setQuestionModal({ open: true, item: null });
     }
   };
@@ -765,6 +783,7 @@ export function LmsAdminPage() {
       }
 
       const payload = {
+        title: questionForm.title || undefined,
         type: questionForm.type,
         questionText: questionForm.type === QuestionType.FillInBlanks ? questionForm.blankTemplate : questionForm.questionText,
         questionData,
@@ -809,6 +828,18 @@ export function LmsAdminPage() {
   const handleOpenPlanModal = (plan?: LearningPlan) => {
     setPublishingError(null);
     if (plan) {
+      const bankItems = (plan.planQuestionBanks || []).map((pqb) => ({
+        id: pqb.questionBankId,
+        type: 'bank' as const,
+        sortOrder: pqb.sortOrder,
+      }));
+      const questionItems = (plan.planQuestions || []).map((pq) => ({
+        id: pq.questionId,
+        type: 'question' as const,
+        sortOrder: pq.sortOrder,
+      }));
+      const assessmentItems = [...bankItems, ...questionItems].sort((a, b) => a.sortOrder - b.sortOrder);
+
       setPlanForm({
         courseCodeId: plan.courseCodeId,
         version: plan.version,
@@ -816,8 +847,7 @@ export function LmsAdminPage() {
         description: plan.description || '',
         isDefault: plan.isDefault,
         selectedChapterIds: plan.planChapters?.map((pc) => pc.chapterId) || [],
-        selectedBankIds: plan.questionBanks?.map((qb) => qb.id) || [],
-        selectedQuestionIds: plan.planQuestions?.map((pq) => pq.questionId) || [],
+        assessmentItems,
       });
       setPlanModal({ open: true, item: plan });
     } else {
@@ -828,8 +858,10 @@ export function LmsAdminPage() {
         description: 'Default theory learning and assessment plan',
         isDefault: true,
         selectedChapterIds: chapters.map((ch) => ch.id),
-        selectedBankIds: questionBanks.map((qb) => qb.id),
-        selectedQuestionIds: questions.map((q) => q.id),
+        assessmentItems: [
+          ...questionBanks.map((qb, idx) => ({ id: qb.id, type: 'bank' as const, sortOrder: idx + 1 })),
+          ...questions.map((q, idx) => ({ id: q.id, type: 'question' as const, sortOrder: questionBanks.length + idx + 1 })),
+        ],
       });
       setPlanModal({ open: true, item: null });
     }
@@ -895,19 +927,18 @@ export function LmsAdminPage() {
       }));
       await lmsAdminApi.setPlanChapters(planId, chapterItems);
 
-      // Link selected question banks
-      if (planForm.selectedBankIds) {
-        await lmsAdminApi.setPlanQuestionBanks(planId, planForm.selectedBankIds);
-      }
+      // Link interleaved assessment items (Question Banks & Standalone Questions)
+      const bankItems = planForm.assessmentItems
+        .filter((i) => i.type === 'bank')
+        .map((i, idx) => ({ questionBankId: i.id, sortOrder: idx + 1 }));
 
-      // Link selected questions
-      const questionItems = planForm.selectedQuestionIds.map((qId, idx) => ({
-        questionId: qId,
-        sortOrder: idx + 1,
-        points: questions.find((q) => q.id === qId)?.points || 1,
-      }));
+      const questionItems = planForm.assessmentItems
+        .filter((i) => i.type === 'question')
+        .map((i, idx) => ({ questionId: i.id, sortOrder: idx + 1 }));
 
+      await lmsAdminApi.setPlanQuestionBanks(planId, bankItems);
       await lmsAdminApi.setPlanQuestions(planId, questionItems);
+
       setPlanModal({ open: false });
       await loadPlans();
       setMessage('Learning Plan version saved successfully!');
@@ -1215,27 +1246,7 @@ export function LmsAdminPage() {
           {/* Sub-Tab B: Chapters */}
           {contentSubTab === 'chapters' && (
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <label style={{ fontWeight: 600, fontSize: 14 }}>Filter Course:</label>
-                  <select
-                    value={selectedCourseCodeId || ''}
-                    onChange={(e) => {
-                      const id = Number(e.target.value);
-                      setSelectedCourseCodeId(id || null);
-                      loadChapters(id || undefined);
-                    }}
-                    style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 14, fontWeight: 600 }}
-                  >
-                    <option value="">All Courses</option>
-                    {courseCodes.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.code} - {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
+              <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 20 }}>
                 <button
                   type="button"
                   onClick={() => handleOpenChapterModal()}
@@ -1246,18 +1257,22 @@ export function LmsAdminPage() {
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                {chapters.map((ch, idx) => (
+                {chapters.map((ch) => (
                   <div key={ch.id} style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 8, padding: 20 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid #f1f5f9' }}>
                       <div>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: '#2563eb', textTransform: 'uppercase' }}>Chapter {idx + 1}</span>
                         {ch.isLocked && (
-                          <span style={{ marginLeft: 8, padding: '2px 8px', backgroundColor: '#fef3c7', color: '#92400e', borderRadius: 4, fontSize: 11, fontWeight: 700, border: '1px solid #fde68a' }} title={`Published plans: ${ch.publishedPlans?.join(', ')}`}>
+                          <span style={{ padding: '2px 8px', backgroundColor: '#fef3c7', color: '#92400e', borderRadius: 4, fontSize: 11, fontWeight: 700, border: '1px solid #fde68a', marginBottom: 4, display: 'inline-block' }} title={`Published plans: ${ch.publishedPlans?.join(', ')}`}>
                             🔒 Published ({ch.publishedPlans?.length})
                           </span>
                         )}
                         <h3 style={{ fontSize: 18, fontWeight: 700, margin: '2px 0 0 0', color: '#0f172a' }}>{ch.title}</h3>
-                        {ch.description && <p style={{ margin: '4px 0 0 0', fontSize: 13, color: '#64748b' }}>{ch.description}</p>}
+                        {ch.description && (
+                          <div
+                            style={{ margin: '4px 0 0 0', fontSize: 13, color: '#64748b' }}
+                            dangerouslySetInnerHTML={{ __html: ch.description }}
+                          />
+                        )}
                       </div>
                       <div>
                         <button type="button" onClick={() => handleOpenBlobModal(ch.id)} style={{ padding: '6px 12px', backgroundColor: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', borderRadius: 6, fontWeight: 600, cursor: 'pointer', marginRight: 8 }}>+ Add Content Block</button>
@@ -1362,13 +1377,13 @@ export function LmsAdminPage() {
                             </span>
                           )}
                         </h3>
-                        {bank.courseCode && (
-                          <span style={{ padding: '2px 8px', backgroundColor: '#eff6ff', color: '#1e40af', borderRadius: 4, fontSize: 12, fontWeight: 700 }}>
-                            {bank.courseCode.code}
-                          </span>
-                        )}
                       </div>
-                      {bank.description && <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 12px 0' }}>{bank.description}</p>}
+                      {bank.description && (
+                        <div
+                          style={{ fontSize: 13, color: '#64748b', margin: '0 0 12px 0' }}
+                          dangerouslySetInnerHTML={{ __html: bank.description }}
+                        />
+                      )}
                       <div style={{ fontSize: 13, color: '#334155', marginBottom: 12 }}>
                         ❓ <strong>{bank.questions?.length || 0}</strong> questions included
                       </div>
@@ -1424,8 +1439,13 @@ export function LmsAdminPage() {
                               : `Type #${q.type}`}
                           </span>
                         </td>
-                        <td style={{ padding: '12px 16px', fontWeight: 600, maxWidth: 300 }}>
-                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <td style={{ padding: '12px 16px', fontWeight: 600, maxWidth: 320 }}>
+                          {q.title && (
+                            <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', marginBottom: 2 }}>
+                              {q.title}
+                            </div>
+                          )}
+                          <div style={{ fontSize: 12, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {stripHtml(q.questionText)}
                           </div>
                         </td>
@@ -1653,27 +1673,17 @@ export function LmsAdminPage() {
 
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Applies to Course Codes:</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, padding: 12, border: '1px solid #cbd5e1', borderRadius: 6, backgroundColor: '#f8fafc' }}>
-                  {courseCodes.map((c) => {
-                    const isChecked = keForm.courseCodeIds.includes(c.id);
-                    return (
-                      <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setKeForm({ ...keForm, courseCodeIds: [...keForm.courseCodeIds, c.id] });
-                            } else {
-                              setKeForm({ ...keForm, courseCodeIds: keForm.courseCodeIds.filter((id) => id !== c.id) });
-                            }
-                          }}
-                        />
-                        <span>{c.code}</span>
-                      </label>
-                    );
-                  })}
-                </div>
+                <SearchableTagPicker
+                  items={courseCodes.map((c) => ({
+                    id: c.id,
+                    label: `${c.code} – ${c.name}`,
+                    badge: c.code,
+                  }))}
+                  selectedIds={keForm.courseCodeIds}
+                  onSelect={(id) => setKeForm({ ...keForm, courseCodeIds: [...keForm.courseCodeIds, Number(id)] })}
+                  onDeselect={(id) => setKeForm({ ...keForm, courseCodeIds: keForm.courseCodeIds.filter((cId) => cId !== Number(id)) })}
+                  placeholder="Search course codes to apply..."
+                />
               </div>
             </div>
 
@@ -1697,15 +1707,19 @@ export function LmsAdminPage() {
                 <div style={{ fontSize: 13, fontWeight: 600 }}>Chapter Title:</div>
                 <input type="text" value={chapterForm.title} onChange={(e) => setChapterForm({ ...chapterForm, title: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }} />
               </label>
-              <label>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>Description:</div>
-                <textarea rows={2} value={chapterForm.description} onChange={(e) => setChapterForm({ ...chapterForm, description: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }} />
-              </label>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Description:</div>
+                <LmsRichTextEditor
+                  content={chapterForm.description}
+                  onChange={(html) => setChapterForm({ ...chapterForm, description: html })}
+                  placeholder="Enter chapter description..."
+                />
+              </div>
 
               {/* Block Sequencer */}
               <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 14 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', marginBottom: 8 }}>
-                  🎯 Content Block Sequencer (Select & Order Reading Sequence)
+                  🎯 Content Block Sequencer (Drag Handles to Order Reading Sequence)
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
@@ -1713,67 +1727,55 @@ export function LmsAdminPage() {
                     const blobObj = blobs.find((b) => b.id === bId);
                     if (!blobObj) return null;
                     return (
-                      <div key={bId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#ffffff', padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: 6 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>
-                          <span style={{ color: '#2563eb', marginRight: 6 }}>#{idx + 1}</span> 📦 {blobObj.title}
+                      <div
+                        key={bId}
+                        draggable
+                        onDragStart={() => setAdminDragIndex(idx)}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          if (adminDragIndex === null || adminDragIndex === idx) return;
+                          const updated = [...chapterSequencer];
+                          const [dragged] = updated.splice(adminDragIndex, 1);
+                          updated.splice(idx, 0, dragged);
+                          setAdminDragIndex(idx);
+                          setChapterBlobsSequencer(updated);
+                        }}
+                        onDragEnd={() => setAdminDragIndex(null)}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#ffffff', padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: 6, cursor: 'grab' }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#334155' }}>
+                          <span style={{ color: '#94a3b8', fontWeight: 'bold', cursor: 'grab' }}>≡</span>
+                          <span style={{ color: '#2563eb', marginRight: 2 }}>#{idx + 1}</span> 📦 {blobObj.title}
                         </div>
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          <button
-                            type="button"
-                            disabled={idx === 0}
-                            onClick={() => {
-                              const updated = [...chapterSequencer];
-                              const temp = updated[idx];
-                              updated[idx] = updated[idx - 1];
-                              updated[idx - 1] = temp;
-                              setChapterBlobsSequencer(updated);
-                            }}
-                            style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #ccc', background: idx === 0 ? '#f1f5f9' : '#ffffff', cursor: idx === 0 ? 'not-allowed' : 'pointer' }}
-                          >
-                            ▲ Up
-                          </button>
-                          <button
-                            type="button"
-                            disabled={idx === chapterSequencer.length - 1}
-                            onClick={() => {
-                              const updated = [...chapterSequencer];
-                              const temp = updated[idx];
-                              updated[idx] = updated[idx + 1];
-                              updated[idx + 1] = temp;
-                              setChapterBlobsSequencer(updated);
-                            }}
-                            style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #ccc', background: idx === chapterSequencer.length - 1 ? '#f1f5f9' : '#ffffff', cursor: idx === chapterSequencer.length - 1 ? 'not-allowed' : 'pointer' }}
-                          >
-                            ▼ Down
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setChapterBlobsSequencer(chapterSequencer.filter((id) => id !== bId))}
+                          style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', cursor: 'pointer' }}
+                        >
+                          Detach
+                        </button>
                       </div>
                     );
                   })}
+                  {chapterSequencer.length === 0 && (
+                    <div style={{ fontSize: 12, color: '#94a3b8', fontStyle: 'italic', padding: '8px 0' }}>
+                      No content blocks attached yet. Search and add content blocks below.
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 6 }}>Attach / Detach Available Content Blocks:</div>
-                <div style={{ maxHeight: 150, overflowY: 'auto', border: '1px solid #cbd5e1', padding: 8, borderRadius: 6, background: '#ffffff', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {blobs.map((b) => {
-                    const isSelected = chapterSequencer.includes(b.id);
-                    return (
-                      <label key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setChapterBlobsSequencer([...chapterSequencer, b.id]);
-                            } else {
-                              setChapterBlobsSequencer(chapterSequencer.filter((id) => id !== b.id));
-                            }
-                          }}
-                        />
-                        <span>📦 {b.title} {b.chapter && b.chapter.id !== chapterModal.item?.id ? `(In: ${b.chapter.title})` : ''}</span>
-                      </label>
-                    );
-                  })}
-                </div>
+                <SearchableTagPicker
+                  items={blobs.map((b) => ({
+                    id: b.id,
+                    label: b.title,
+                    sublabel: b.chapter ? `In: ${b.chapter.title}` : 'Unassigned',
+                  }))}
+                  selectedIds={chapterSequencer}
+                  onSelect={(blobId) => setChapterBlobsSequencer([...chapterSequencer, String(blobId)])}
+                  onDeselect={(blobId) => setChapterBlobsSequencer(chapterSequencer.filter((id) => id !== String(blobId)))}
+                  placeholder="Search content blocks to attach to this chapter..."
+                />
               </div>
             </div>
 
@@ -1804,26 +1806,17 @@ export function LmsAdminPage() {
               </label>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Mapped Knowledge Evidence (KEs):</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 8, border: '1px solid #ccc', borderRadius: 4, maxHeight: 140, overflowY: 'auto' }}>
-                  {kes.map((k) => {
-                    const isChecked = blobForm.knowledgeEvidenceIds.includes(k.id);
-                    return (
-                      <label key={k.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={(e) => {
-                            const updated = e.target.checked
-                              ? [...blobForm.knowledgeEvidenceIds, k.id]
-                              : blobForm.knowledgeEvidenceIds.filter((id) => id !== k.id);
-                            setBlobForm({ ...blobForm, knowledgeEvidenceIds: updated });
-                          }}
-                        />
-                        <strong>{k.code}</strong> &ndash; {k.title}
-                      </label>
-                    );
-                  })}
-                </div>
+                <SearchableTagPicker
+                  items={kes.map((k) => ({
+                    id: k.id,
+                    label: `${k.code} – ${k.title}`,
+                    badge: k.code,
+                  }))}
+                  selectedIds={blobForm.knowledgeEvidenceIds}
+                  onSelect={(keId) => setBlobForm({ ...blobForm, knowledgeEvidenceIds: [...blobForm.knowledgeEvidenceIds, String(keId)] })}
+                  onDeselect={(keId) => setBlobForm({ ...blobForm, knowledgeEvidenceIds: blobForm.knowledgeEvidenceIds.filter((id) => id !== String(keId)) })}
+                  placeholder="Search KEs by code or title..."
+                />
               </div>
               <label>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>Azure Blob Video URL / Vimeo Embed / Vimeo ID:</div>
@@ -1866,47 +1859,29 @@ export function LmsAdminPage() {
                 <div style={{ fontSize: 13, fontWeight: 600 }}>Question Bank Name:</div>
                 <input type="text" placeholder="e.g. CPR Assessment Bank" value={bankForm.name} onChange={(e) => setBankForm({ ...bankForm, name: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }} />
               </label>
-              <label>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>Course Code Association:</div>
-                <select
-                  value={bankForm.courseCodeId || ''}
-                  onChange={(e) => setBankForm({ ...bankForm, courseCodeId: Number(e.target.value) || null })}
-                  style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }}
-                >
-                  <option value="">General (All Courses)</option>
-                  {courseCodes.map((c) => (
-                    <option key={c.id} value={c.id}>{c.code} - {c.name}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>Description:</div>
-                <textarea rows={2} value={bankForm.description} onChange={(e) => setBankForm({ ...bankForm, description: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #ccc' }} />
-              </label>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Description:</div>
+                <LmsRichTextEditor
+                  content={bankForm.description}
+                  onChange={(html) => setBankForm({ ...bankForm, description: html })}
+                  placeholder="Enter question bank description..."
+                />
+              </div>
 
               <div>
                 <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Select Questions to include in this Bank:</div>
-                <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid #cbd5e1', padding: 8, borderRadius: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {questions.map((q) => {
-                    const isChecked = bankForm.questionIds.includes(q.id);
-                    return (
-                      <label key={q.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setBankForm({ ...bankForm, questionIds: [...bankForm.questionIds, q.id] });
-                            } else {
-                              setBankForm({ ...bankForm, questionIds: bankForm.questionIds.filter((id) => id !== q.id) });
-                            }
-                          }}
-                        />
-                        <span>❓ <strong>{stripHtml(q.questionText)}</strong></span>
-                      </label>
-                    );
-                  })}
-                </div>
+                <SearchableTagPicker
+                  items={questions.map((q) => ({
+                    id: q.id,
+                    label: q.title || stripHtml(q.questionText) || 'Untitled Question',
+                    sublabel: stripHtml(q.questionText),
+                    badge: `Type ${q.type}`,
+                  }))}
+                  selectedIds={bankForm.questionIds}
+                  onSelect={(qId) => setBankForm({ ...bankForm, questionIds: [...bankForm.questionIds, String(qId)] })}
+                  onDeselect={(qId) => setBankForm({ ...bankForm, questionIds: bankForm.questionIds.filter((id) => id !== String(qId)) })}
+                  placeholder="Search questions to add to bank..."
+                />
               </div>
             </div>
 
@@ -1936,6 +1911,36 @@ export function LmsAdminPage() {
             )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>Question Title:</div>
+                  <button
+                    type="button"
+                    onClick={handleAutoSummarizeQuestionTitle}
+                    disabled={summarizingQuestionTitle}
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      backgroundColor: '#f3e8ff',
+                      color: '#6b21a8',
+                      border: '1px solid #d8b4fe',
+                      borderRadius: 4,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {summarizingQuestionTitle ? 'Summarizing...' : '✨ AI Summarize Title'}
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  placeholder="e.g. CPR Compression Depth & Rate (Leave empty for auto-summary on save)"
+                  value={questionForm.title}
+                  onChange={(e) => setQuestionForm({ ...questionForm, title: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 14 }}
+                />
+              </div>
+
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12 }}>
                 <label>
                   <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Question Type:</div>
@@ -2510,133 +2515,27 @@ export function LmsAdminPage() {
                 <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
                   Mapped Knowledge Evidence (KEs):
                 </div>
-
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8, minHeight: 32, alignItems: 'center' }}>
-                  {questionForm.knowledgeEvidenceIds.map((id) => {
-                    const foundKe = kes.find((k) => k.id === id);
-                    if (!foundKe) return null;
-                    return (
-                      <span
-                        key={id}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 6,
-                          padding: '4px 10px',
-                          backgroundColor: '#eff6ff',
-                          color: '#1e40af',
-                          border: '1px solid #bfdbfe',
-                          borderRadius: 16,
-                          fontSize: 12,
-                          fontWeight: 600,
-                        }}
-                      >
-                        <span>{foundKe.code} &ndash; {foundKe.title}</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setQuestionForm({
-                              ...questionForm,
-                              knowledgeEvidenceIds: questionForm.knowledgeEvidenceIds.filter((kId) => kId !== id),
-                            });
-                          }}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: '#1d4ed8',
-                            cursor: 'pointer',
-                            fontWeight: 'bold',
-                            fontSize: 14,
-                            lineHeight: 1,
-                            padding: 0,
-                          }}
-                          title="Remove KE"
-                        >
-                          &times;
-                        </button>
-                      </span>
-                    );
-                  })}
-                  {questionForm.knowledgeEvidenceIds.length === 0 && (
-                    <span style={{ fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>
-                      No KEs mapped. Search and select Knowledge Evidence items below to map.
-                    </span>
-                  )}
-                </div>
-
-                <div style={{ position: 'relative' }}>
-                  <input
-                    type="text"
-                    placeholder="Search Knowledge Evidence by code or title (e.g. KE1.1, CPR)..."
-                    value={keSearchQuery}
-                    onChange={(e) => setKeSearchQuery(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '6px 10px',
-                      borderRadius: 6,
-                      border: '1px solid #cbd5e1',
-                      fontSize: 12,
-                    }}
-                  />
-                  {keSearchQuery.trim().length > 0 && (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: '100%',
-                        left: 0,
-                        right: 0,
-                        zIndex: 10,
-                        backgroundColor: '#ffffff',
-                        border: '1px solid #cbd5e1',
-                        borderRadius: 6,
-                        boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
-                        maxHeight: 180,
-                        overflowY: 'auto',
-                        marginTop: 4,
-                      }}
-                    >
-                      {kes
-                        .filter(
-                          (k) =>
-                            !questionForm.knowledgeEvidenceIds.includes(k.id) &&
-                            (k.code.toLowerCase().includes(keSearchQuery.toLowerCase()) ||
-                              k.title.toLowerCase().includes(keSearchQuery.toLowerCase()))
-                        )
-                        .map((k) => (
-                          <div
-                            key={k.id}
-                            onClick={() => {
-                              setQuestionForm({
-                                ...questionForm,
-                                knowledgeEvidenceIds: [...questionForm.knowledgeEvidenceIds, k.id],
-                              });
-                              setKeSearchQuery('');
-                            }}
-                            style={{
-                              padding: '8px 12px',
-                              fontSize: 12,
-                              cursor: 'pointer',
-                              borderBottom: '1px solid #f1f5f9',
-                            }}
-                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f8fafc')}
-                            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#ffffff')}
-                          >
-                            <strong style={{ color: '#1e40af' }}>{k.code}</strong> &ndash; {k.title}
-                          </div>
-                        ))}
-                      {kes.filter(
-                        (k) =>
-                          !questionForm.knowledgeEvidenceIds.includes(k.id) &&
-                          (k.code.toLowerCase().includes(keSearchQuery.toLowerCase()) ||
-                            k.title.toLowerCase().includes(keSearchQuery.toLowerCase()))
-                      ).length === 0 && (
-                        <div style={{ padding: '8px 12px', fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>
-                          No matching unmapped KEs found.
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
+                <SearchableTagPicker
+                  items={kes.map((k) => ({
+                    id: k.id,
+                    label: `${k.code} – ${k.title}`,
+                    badge: k.code,
+                  }))}
+                  selectedIds={questionForm.knowledgeEvidenceIds}
+                  onSelect={(keId) =>
+                    setQuestionForm((prev) => ({
+                      ...prev,
+                      knowledgeEvidenceIds: [...prev.knowledgeEvidenceIds, String(keId)],
+                    }))
+                  }
+                  onDeselect={(keId) =>
+                    setQuestionForm((prev) => ({
+                      ...prev,
+                      knowledgeEvidenceIds: prev.knowledgeEvidenceIds.filter((id) => id !== String(keId)),
+                    }))
+                  }
+                  placeholder="Search Knowledge Evidence by code or title..."
+                />
               </div>
             </div>
 
@@ -2698,90 +2597,193 @@ export function LmsAdminPage() {
               </label>
 
               <div>
-                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Select Chapters / Content Modules for this Plan:</div>
-                <div style={{ maxHeight: 180, overflowY: 'auto', border: '1px solid #ccc', padding: 8, borderRadius: 4, display: 'flex', flexDirection: 'column', gap: 6, opacity: planModal.item?.status === 'PUBLISHED' ? 0.7 : 1 }}>
-                  {chapters.length === 0 ? (
-                    <div style={{ color: '#94a3b8', fontSize: 13 }}>No chapters available. Create chapters in the Chapters tab.</div>
-                  ) : (
-                    chapters.map((ch) => {
-                      const isChecked = planForm.selectedChapterIds.includes(ch.id);
-                      return (
-                        <label key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: planModal.item?.status === 'PUBLISHED' ? 'not-allowed' : 'pointer' }}>
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            disabled={Boolean(planModal.item?.status === 'PUBLISHED')}
-                            onChange={() => {
-                              if (isChecked) {
-                                setPlanForm({ ...planForm, selectedChapterIds: planForm.selectedChapterIds.filter((id) => id !== ch.id) });
-                              } else {
-                                setPlanForm({ ...planForm, selectedChapterIds: [...planForm.selectedChapterIds, ch.id] });
-                              }
-                            }}
-                          />
-                          <span><strong>{ch.title}</strong> ({ch.blobs?.length || 0} content blocks)</span>
-                        </label>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Select & Sequence Chapters for this Plan:</div>
+                <SearchableTagPicker
+                  items={chapters.map((ch) => ({
+                    id: ch.id,
+                    label: ch.title,
+                    sublabel: `${ch.blobs?.length || 0} content blocks`,
+                  }))}
+                  selectedIds={planForm.selectedChapterIds}
+                  onSelect={(chId) =>
+                    setPlanForm((prev) => ({
+                      ...prev,
+                      selectedChapterIds: [...prev.selectedChapterIds, String(chId)],
+                    }))
+                  }
+                  onDeselect={(chId) =>
+                    setPlanForm((prev) => ({
+                      ...prev,
+                      selectedChapterIds: prev.selectedChapterIds.filter((id) => id !== String(chId)),
+                    }))
+                  }
+                  placeholder="Search chapters to attach..."
+                  disabled={Boolean(planModal.item?.status === 'PUBLISHED')}
+                />
 
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Select Question Banks (Containers) for this Plan:</div>
-                <div style={{ maxHeight: 150, overflowY: 'auto', border: '1px solid #ccc', padding: 8, borderRadius: 4, display: 'flex', flexDirection: 'column', gap: 6, opacity: planModal.item?.status === 'PUBLISHED' ? 0.7 : 1 }}>
-                  {questionBanks.length === 0 ? (
-                    <div style={{ color: '#94a3b8', fontSize: 13 }}>No question banks created yet.</div>
-                  ) : (
-                    questionBanks.map((qb) => {
-                      const isChecked = planForm.selectedBankIds.includes(qb.id);
+                {planForm.selectedChapterIds.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10, padding: 10, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>
+                      📖 Chapter Sequence Order (Drag Handles to Reorder)
+                    </div>
+                    {planForm.selectedChapterIds.map((chId, idx) => {
+                      const ch = chapters.find((c) => c.id === chId);
+                      if (!ch) return null;
                       return (
-                        <label key={qb.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: planModal.item?.status === 'PUBLISHED' ? 'not-allowed' : 'pointer' }}>
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            disabled={Boolean(planModal.item?.status === 'PUBLISHED')}
-                            onChange={() => {
-                              if (isChecked) {
-                                setPlanForm({ ...planForm, selectedBankIds: planForm.selectedBankIds.filter((id) => id !== qb.id) });
-                              } else {
-                                setPlanForm({ ...planForm, selectedBankIds: [...planForm.selectedBankIds, qb.id] });
-                              }
-                            }}
-                          />
-                          <span>🏦 <strong>{qb.name}</strong> ({qb.questions?.length || 0} questions)</span>
-                        </label>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Select Additional Individual Questions:</div>
-                <div style={{ maxHeight: 180, overflowY: 'auto', border: '1px solid #ccc', padding: 8, borderRadius: 4, opacity: planModal.item?.status === 'PUBLISHED' ? 0.7 : 1 }}>
-                  {questions.map((q) => {
-                    const isChecked = planForm.selectedQuestionIds.includes(q.id);
-                    return (
-                      <label key={q.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13, cursor: planModal.item?.status === 'PUBLISHED' ? 'not-allowed' : 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          disabled={Boolean(planModal.item?.status === 'PUBLISHED')}
-                          onChange={() => {
-                            if (isChecked) {
-                              setPlanForm({ ...planForm, selectedQuestionIds: planForm.selectedQuestionIds.filter((id) => id !== q.id) });
-                            } else {
-                              setPlanForm({ ...planForm, selectedQuestionIds: [...planForm.selectedQuestionIds, q.id] });
-                            }
+                        <div
+                          key={chId}
+                          draggable={!planModal.item?.status || planModal.item.status !== 'PUBLISHED'}
+                          onDragStart={() => setAdminDragIndex(idx)}
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            if (adminDragIndex === null || adminDragIndex === idx) return;
+                            const updated = [...planForm.selectedChapterIds];
+                            const [dragged] = updated.splice(adminDragIndex, 1);
+                            updated.splice(idx, 0, dragged);
+                            setAdminDragIndex(idx);
+                            setPlanForm((prev) => ({ ...prev, selectedChapterIds: updated }));
                           }}
-                        />
-                        <span>❓ {stripHtml(q.questionText)}</span>
-                      </label>
+                          onDragEnd={() => setAdminDragIndex(null)}
+                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#ffffff', padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: 6, cursor: 'grab' }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 600, color: '#1e293b' }}>
+                            <span style={{ color: '#94a3b8', fontWeight: 'bold', cursor: 'grab' }}>≡</span>
+                            <span style={{ color: '#2563eb' }}>#{idx + 1}</span>
+                            <span>{ch.title}</span>
+                          </div>
+                          {planModal.item?.status !== 'PUBLISHED' && (
+                            <button
+                              type="button"
+                              onClick={() => setPlanForm((prev) => ({ ...prev, selectedChapterIds: prev.selectedChapterIds.filter((id) => id !== chId) }))}
+                              style={{ border: 'none', background: 'transparent', color: '#dc2626', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+                            >
+                              Detach
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Select Question Banks to Add:</div>
+                <SearchableTagPicker
+                  items={questionBanks.map((qb) => ({
+                    id: qb.id,
+                    label: qb.name,
+                    sublabel: `${qb.questions?.length || 0} questions`,
+                    badge: 'Question Bank',
+                  }))}
+                  selectedIds={planForm.assessmentItems.filter((i) => i.type === 'bank').map((i) => i.id)}
+                  onSelect={(bankId) => {
+                    if (!planForm.assessmentItems.some((i) => i.type === 'bank' && i.id === String(bankId))) {
+                      setPlanForm((prev) => ({
+                        ...prev,
+                        assessmentItems: [...prev.assessmentItems, { id: String(bankId), type: 'bank' }],
+                      }));
+                    }
+                  }}
+                  onDeselect={(bankId) => {
+                    setPlanForm((prev) => ({
+                      ...prev,
+                      assessmentItems: prev.assessmentItems.filter((i) => !(i.type === 'bank' && i.id === String(bankId))),
+                    }));
+                  }}
+                  placeholder="Search question banks..."
+                  disabled={Boolean(planModal.item?.status === 'PUBLISHED')}
+                />
+              </div>
+
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Select Standalone Questions to Add:</div>
+                <SearchableTagPicker
+                  items={questions.map((q) => ({
+                    id: q.id,
+                    label: q.title || stripHtml(q.questionText) || 'Untitled Question',
+                    sublabel: stripHtml(q.questionText),
+                    badge: 'Question',
+                  }))}
+                  selectedIds={planForm.assessmentItems.filter((i) => i.type === 'question').map((i) => i.id)}
+                  onSelect={(qId) => {
+                    if (!planForm.assessmentItems.some((i) => i.type === 'question' && i.id === String(qId))) {
+                      setPlanForm((prev) => ({
+                        ...prev,
+                        assessmentItems: [...prev.assessmentItems, { id: String(qId), type: 'question' }],
+                      }));
+                    }
+                  }}
+                  onDeselect={(qId) => {
+                    setPlanForm((prev) => ({
+                      ...prev,
+                      assessmentItems: prev.assessmentItems.filter((i) => !(i.type === 'question' && i.id === String(qId))),
+                    }));
+                  }}
+                  placeholder="Search standalone questions..."
+                  disabled={Boolean(planModal.item?.status === 'PUBLISHED')}
+                />
+              </div>
+
+              {/* Interleaved Assessment Items Sequencer */}
+              {planForm.assessmentItems.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 12, background: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#581c87', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>🎯 Interleaved Assessment Sequence Order (Drag Handles to Reorder)</span>
+                    <span style={{ fontSize: 11, color: '#7e22ce' }}>{planForm.assessmentItems.length} items</span>
+                  </div>
+                  {planForm.assessmentItems.map((item, idx) => {
+                    const isBank = item.type === 'bank';
+                    const bankObj = isBank ? questionBanks.find((b) => b.id === item.id) : null;
+                    const qObj = !isBank ? questions.find((q) => q.id === item.id) : null;
+                    const titleText = isBank
+                      ? bankObj?.name || 'Question Bank'
+                      : qObj?.title || stripHtml(qObj?.questionText || '') || 'Question';
+
+                    return (
+                      <div
+                        key={`${item.type}-${item.id}`}
+                        draggable={!planModal.item?.status || planModal.item.status !== 'PUBLISHED'}
+                        onDragStart={() => setAdminDragIndex(idx)}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          if (adminDragIndex === null || adminDragIndex === idx) return;
+                          const updated = [...planForm.assessmentItems];
+                          const [dragged] = updated.splice(adminDragIndex, 1);
+                          updated.splice(idx, 0, dragged);
+                          setAdminDragIndex(idx);
+                          setPlanForm((prev) => ({ ...prev, assessmentItems: updated }));
+                        }}
+                        onDragEnd={() => setAdminDragIndex(null)}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#ffffff', padding: '6px 12px', border: '1px solid #d8b4fe', borderRadius: 6, cursor: 'grab' }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 600, minWidth: 0 }}>
+                          <span style={{ color: '#94a3b8', fontWeight: 'bold', cursor: 'grab' }}>≡</span>
+                          <span style={{ color: '#6b21a8' }}>#{idx + 1}</span>
+                          <span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700, background: isBank ? '#fef3c7' : '#eff6ff', color: isBank ? '#92400e' : '#1e40af' }}>
+                            {isBank ? '🏦 Bank' : '❓ Question'}
+                          </span>
+                          <span style={{ color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{titleText}</span>
+                        </div>
+                        {planModal.item?.status !== 'PUBLISHED' && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPlanForm((prev) => ({
+                                ...prev,
+                                assessmentItems: prev.assessmentItems.filter((it) => !(it.type === item.type && it.id === item.id)),
+                              }))
+                            }
+                            style={{ border: 'none', background: 'transparent', color: '#dc2626', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
-              </div>
+              )}
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
               <button type="button" onClick={() => setPlanModal({ open: false })} style={{ padding: '8px 16px', borderRadius: 4, border: '1px solid #ccc' }}>Cancel</button>

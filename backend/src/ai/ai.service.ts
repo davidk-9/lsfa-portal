@@ -488,6 +488,63 @@ export class AiService {
     }
   }
 
+  // Automatically generate a 3-7 word professional title summary for questions, content blocks, etc.
+  async summarizeTextTitle(text: string, itemType: string = 'item'): Promise<string> {
+    const plainText = (text || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!plainText) {
+      return '';
+    }
+
+    const apiKey = (await this.settings.get('openai_api_key'))?.trim();
+    if (!apiKey) {
+      const words = plainText.split(/\s+/);
+      if (words.length <= 5) return plainText;
+      return words.slice(0, 5).join(' ') + '...';
+    }
+
+    const primaryModel = (await this.settings.get('ai_model_primary'))?.trim() || 'gpt-4o-mini';
+
+    const prompt = 
+      'You are a professional educational parser specializing in VET / ASQA training standards.\n' +
+      `Given the text content for a ${itemType}, generate a short, professional, 3 to 7 word summary that acts as a concise title.\n` +
+      'Rules:\n' +
+      '- Maintain high technical accuracy (keep codes or critical standard terms like "DRSABCD" or "CPR" if mentioned).\n' +
+      '- Make it active and clear.\n' +
+      '- Output ONLY the 3 to 7 word summary title. Do not include quotes, markdown, punctuation, or any introductory text.\n\n' +
+      `Text: ${plainText.slice(0, 1500)}`;
+
+    try {
+      const response = await axios.post(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          model: primaryModel,
+          messages: [{ role: 'user', content: prompt }],
+          max_completion_tokens: 30,
+          temperature: 0.3,
+        },
+        {
+          timeout: 15000,
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      const content = response.data?.choices?.[0]?.message?.content;
+      if (!content || typeof content !== 'string') {
+        throw new Error('Invalid response structure from OpenAI.');
+      }
+
+      return content.trim().replace(/^["']|["']$/g, '');
+    } catch (err: any) {
+      this.logger.error(`OpenAI summary generation failed: ${err.message}`);
+      const words = plainText.split(/\s+/);
+      if (words.length <= 5) return plainText;
+      return words.slice(0, 5).join(' ') + '...';
+    }
+  }
+
   private clamp01(value: number): number {
     if (Number.isNaN(value)) return 0;
     return Math.max(0, Math.min(1, value));

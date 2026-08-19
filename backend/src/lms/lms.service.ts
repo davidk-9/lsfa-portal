@@ -369,8 +369,8 @@ export class LmsService {
         planQuestions: {
           include: { question: { include: { knowledgeEvidences: true } } },
         },
-        questionBanks: {
-          include: { questions: { include: { knowledgeEvidences: true } } },
+        planQuestionBanks: {
+          include: { questionBank: { include: { questions: { include: { knowledgeEvidences: true } } } } },
         },
       },
     });
@@ -432,7 +432,7 @@ export class LmsService {
     // Credit target questions
     const allTargetQuestions = [
       ...targetPlan.planQuestions.map((pq) => pq.question),
-      ...targetPlan.questionBanks.flatMap((qb) => qb.questions),
+      ...targetPlan.planQuestionBanks.flatMap((pqb) => pqb.questionBank.questions),
     ];
 
     for (const q of allTargetQuestions) {

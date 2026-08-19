@@ -33,11 +33,11 @@ export class LmsAdminService {
 
     const publishedPlanBanks = await this.prisma.learningPlan.findMany({
       where: { status: 'PUBLISHED' },
-      select: { questionBanks: { select: { questions: { select: { id: true } } } } },
+      select: { planQuestionBanks: { select: { questionBank: { select: { questions: { select: { id: true } } } } } } },
     });
     for (const plan of publishedPlanBanks) {
-      for (const bank of plan.questionBanks) {
-        for (const q of bank.questions) {
+      for (const pqb of plan.planQuestionBanks) {
+        for (const q of pqb.questionBank.questions) {
           publishedQuestionIds.add(q.id);
         }
       }
@@ -127,11 +127,11 @@ export class LmsAdminService {
 
     const publishedPlanBanks = await this.prisma.learningPlan.findMany({
       where: { status: 'PUBLISHED' },
-      select: { questionBanks: { select: { questions: { select: { id: true } } } } },
+      select: { planQuestionBanks: { select: { questionBank: { select: { questions: { select: { id: true } } } } } } },
     });
     for (const plan of publishedPlanBanks) {
-      for (const bank of plan.questionBanks) {
-        for (const q of bank.questions) {
+      for (const pqb of plan.planQuestionBanks) {
+        for (const q of pqb.questionBank.questions) {
           publishedQuestionIds.add(q.id);
         }
       }
@@ -184,11 +184,11 @@ export class LmsAdminService {
 
     const publishedPlanBanks = await this.prisma.learningPlan.findMany({
       where: { status: 'PUBLISHED' },
-      select: { questionBanks: { select: { questions: { select: { id: true } } } } },
+      select: { planQuestionBanks: { select: { questionBank: { select: { questions: { select: { id: true } } } } } } },
     });
     for (const plan of publishedPlanBanks) {
-      for (const bank of plan.questionBanks) {
-        for (const q of bank.questions) {
+      for (const pqb of plan.planQuestionBanks) {
+        for (const q of pqb.questionBank.questions) {
           publishedQuestionIds.add(q.id);
         }
       }
@@ -301,13 +301,13 @@ export class LmsAdminService {
   }
 
   async deleteChapter(id: string) {
-    const publishedCount = await this.prisma.learningPlanChapter.count({
-      where: { chapterId: id, learningPlan: { status: 'PUBLISHED' } },
+    const planCount = await this.prisma.learningPlanChapter.count({
+      where: { chapterId: id },
     });
 
-    if (publishedCount > 0) {
+    if (planCount > 0) {
       throw new BadRequestException(
-        `Cannot delete Chapter because it is attached to a PUBLISHED Learning Plan. Create a new draft plan version or clone first.`,
+        `Cannot delete Chapter because it is attached to one or more Learning Plans. Remove it from the Learning Plan(s) first.`,
       );
     }
 
@@ -340,7 +340,7 @@ export class LmsAdminService {
   async createLearningBlob(dto: {
     chapterId?: string;
     knowledgeEvidenceIds?: string[];
-    title: string;
+    title?: string;
     description?: string;
     contentHtml?: string;
     vimeoId?: string;
@@ -348,13 +348,18 @@ export class LmsAdminService {
     durationSeconds?: number;
     sortOrder?: number;
   }) {
+    let title = dto.title?.trim();
+    if (!title) {
+      title = await this.ai.summarizeTextTitle(dto.description || dto.contentHtml || '', 'Content Block');
+    }
+
     return this.prisma.lmsLearningBlob.create({
       data: {
         chapterId: dto.chapterId || null,
         knowledgeEvidences: dto.knowledgeEvidenceIds && dto.knowledgeEvidenceIds.length > 0
           ? { connect: dto.knowledgeEvidenceIds.map((id) => ({ id })) }
           : undefined,
-        title: dto.title,
+        title: title || 'Untitled Content Block',
         description: dto.description || '',
         contentHtml: dto.contentHtml || '',
         vimeoId: dto.vimeoId || null,
@@ -397,6 +402,14 @@ export class LmsAdminService {
 
     if (!existing) throw new NotFoundException(`Learning blob '${id}' not found`);
 
+    let finalTitle = dto.title !== undefined ? dto.title.trim() : undefined;
+    if (dto.title !== undefined && !finalTitle) {
+      finalTitle = await this.ai.summarizeTextTitle(
+        dto.description || dto.contentHtml || existing.description || existing.contentHtml || '',
+        'Content Block',
+      );
+    }
+
     const isLocked = existing.isLocked || existing.chapter?.planChapters.some((pc) => pc.learningPlan.status === 'PUBLISHED');
 
     if (isLocked) {
@@ -405,7 +418,7 @@ export class LmsAdminService {
       const newBlob = await this.prisma.lmsLearningBlob.create({
         data: {
           chapterId: dto.chapterId !== undefined ? dto.chapterId : existing.chapterId,
-          title: dto.title ?? existing.title,
+          title: finalTitle ?? existing.title,
           description: dto.description ?? existing.description,
           contentHtml: dto.contentHtml ?? existing.contentHtml,
           vimeoId: dto.vimeoId !== undefined ? dto.vimeoId : existing.vimeoId,
@@ -437,7 +450,7 @@ export class LmsAdminService {
         knowledgeEvidences: dto.knowledgeEvidenceIds
           ? { set: dto.knowledgeEvidenceIds.map((kId) => ({ id: kId })) }
           : undefined,
-        title: dto.title,
+        title: finalTitle,
         description: dto.description,
         contentHtml: dto.contentHtml,
         vimeoId: dto.vimeoId,
@@ -713,6 +726,7 @@ export class LmsAdminService {
   }
 
   async createQuestion(dto: {
+    title?: string;
     type: number;
     questionText: string;
     questionData?: any;
@@ -722,8 +736,14 @@ export class LmsAdminService {
     knowledgeEvidenceIds?: string[];
     coreLearningBlobId?: string;
   }) {
+    let title = dto.title?.trim();
+    if (!title) {
+      title = await this.ai.summarizeTextTitle(dto.questionText || '', 'Question');
+    }
+
     return this.prisma.lmsQuestion.create({
       data: {
+        title: title || 'Untitled Question',
         type: dto.type,
         questionText: dto.questionText,
         questionData: dto.questionData || null,
@@ -745,6 +765,7 @@ export class LmsAdminService {
   async updateQuestion(
     id: string,
     dto: {
+      title?: string;
       type?: number;
       questionText?: string;
       questionData?: any;
@@ -768,12 +789,18 @@ export class LmsAdminService {
 
     if (!existing) throw new NotFoundException(`Question '${id}' not found`);
 
+    let finalTitle = dto.title !== undefined ? dto.title.trim() : undefined;
+    if (dto.title !== undefined && !finalTitle) {
+      finalTitle = await this.ai.summarizeTextTitle(dto.questionText || existing.questionText || '', 'Question');
+    }
+
     const isLocked = existing.planQuestions.some((pq) => pq.learningPlan.status === 'PUBLISHED');
 
     if (isLocked) {
       // Question is on a published plan — create a new question version to preserve historical student assessment responses
       const newQuestion = await this.prisma.lmsQuestion.create({
         data: {
+          title: finalTitle ?? existing.title,
           type: dto.type ?? existing.type,
           questionText: dto.questionText ?? existing.questionText,
           questionData: dto.questionData !== undefined ? dto.questionData : (existing.questionData as any),
@@ -820,6 +847,7 @@ export class LmsAdminService {
     return this.prisma.lmsQuestion.update({
       where: { id },
       data: {
+        title: finalTitle,
         type: dto.type,
         questionText: dto.questionText,
         questionData: dto.questionData,
@@ -846,14 +874,16 @@ export class LmsAdminService {
           include: { learningPlan: { select: { status: true } } },
         },
         questionBanks: {
-          include: { plans: { select: { status: true } } },
+          include: { planQuestionBanks: { include: { learningPlan: { select: { status: true } } } } },
         },
       },
     });
     if (!existing) throw new NotFoundException(`Question '${id}' not found`);
 
     const isDirectlyPublished = existing.planQuestions.some((pq) => pq.learningPlan.status === 'PUBLISHED');
-    const isBankPublished = existing.questionBanks.some((bank) => bank.plans.some((p) => p.status === 'PUBLISHED'));
+    const isBankPublished = existing.questionBanks.some((bank) =>
+      bank.planQuestionBanks.some((pqb) => pqb.learningPlan.status === 'PUBLISHED'),
+    );
 
     if (isDirectlyPublished || isBankPublished) {
       throw new BadRequestException('Cannot delete question because it is part of a PUBLISHED Learning Plan.');
@@ -871,22 +901,27 @@ export class LmsAdminService {
       include: {
         courseCode: { select: { id: true, code: true, name: true } },
         questions: {
-          select: { id: true, questionText: true, type: true, points: true },
+          select: { id: true, questionText: true, title: true, type: true, points: true },
         },
-        plans: {
-          select: { id: true, version: true, status: true, courseCode: { select: { code: true } } },
+        planQuestionBanks: {
+          select: {
+            learningPlan: {
+              select: { id: true, version: true, status: true, courseCode: { select: { code: true } } },
+            },
+          },
         },
-        _count: { select: { plans: true } },
+        _count: { select: { planQuestionBanks: true } },
       },
     });
 
     return banks.map((bank) => {
-      const publishedPlans = bank.plans
-        .filter((p) => p.status === 'PUBLISHED')
-        .map((p) => `${p.courseCode?.code || 'Plan'} (${p.version})`);
+      const publishedPlans = bank.planQuestionBanks
+        .filter((pqb) => pqb.learningPlan.status === 'PUBLISHED')
+        .map((pqb) => `${pqb.learningPlan.courseCode?.code || 'Plan'} (${pqb.learningPlan.version})`);
 
       return {
         ...bank,
+        plans: bank.planQuestionBanks.map((pqb) => pqb.learningPlan),
         isLocked: publishedPlans.length > 0,
         publishedPlans,
       };
@@ -944,37 +979,60 @@ export class LmsAdminService {
   async deleteQuestionBank(id: string) {
     const bank = await this.prisma.lmsQuestionBank.findUnique({
       where: { id },
-      include: { plans: { select: { status: true } } },
+      include: { planQuestionBanks: { include: { learningPlan: { select: { status: true } } } } },
     });
     if (!bank) throw new NotFoundException(`Question Bank '${id}' not found`);
 
-    if (bank.plans.some((p) => p.status === 'PUBLISHED')) {
+    if (bank.planQuestionBanks.some((pqb) => pqb.learningPlan.status === 'PUBLISHED')) {
       throw new BadRequestException('Cannot delete Question Bank because it is assigned to a PUBLISHED Learning Plan.');
     }
 
     return this.prisma.lmsQuestionBank.delete({ where: { id } });
   }
 
-  async setPlanQuestionBanks(planId: number, bankIds: string[]) {
+  async setPlanQuestionBanks(
+    planId: number,
+    bankItems: string[] | Array<{ questionBankId: string; sortOrder: number }>,
+  ) {
     const plan = await this.prisma.learningPlan.findUnique({ where: { id: planId } });
     if (!plan) throw new NotFoundException(`Learning plan '${planId}' not found`);
     if (plan.status === 'PUBLISHED') {
       throw new BadRequestException('Published learning plans are locked and read-only. Clone to a new draft version to make modifications.');
     }
 
-    await this.prisma.learningPlan.update({
-      where: { id: planId },
-      data: {
-        questionBanks: { set: bankIds.map((bId) => ({ id: bId })) },
-      },
+    await this.prisma.learningPlanQuestionBank.deleteMany({
+      where: { learningPlanId: planId },
     });
+
+    const items = Array.isArray(bankItems)
+      ? bankItems.map((item, idx) =>
+          typeof item === 'string'
+            ? { questionBankId: item, sortOrder: idx + 1 }
+            : { questionBankId: item.questionBankId, sortOrder: item.sortOrder ?? idx + 1 },
+        )
+      : [];
+
+    for (const item of items) {
+      await this.prisma.learningPlanQuestionBank.create({
+        data: {
+          learningPlanId: planId,
+          questionBankId: item.questionBankId,
+          sortOrder: item.sortOrder,
+        },
+      });
+    }
 
     return this.prisma.learningPlan.findUnique({
       where: { id: planId },
       include: {
-        questionBanks: {
+        planQuestionBanks: {
+          orderBy: { sortOrder: 'asc' },
           include: {
-            questions: { select: { id: true, questionText: true, type: true } },
+            questionBank: {
+              include: {
+                questions: { select: { id: true, questionText: true, title: true, type: true } },
+              },
+            },
           },
         },
       },
@@ -1014,11 +1072,16 @@ export class LmsAdminService {
             },
           },
         },
-        questionBanks: {
+        planQuestionBanks: {
+          orderBy: { sortOrder: 'asc' },
           include: {
-            questions: {
+            questionBank: {
               include: {
-                knowledgeEvidences: { select: { id: true, code: true } },
+                questions: {
+                  include: {
+                    knowledgeEvidences: { select: { id: true, code: true } },
+                  },
+                },
               },
             },
           },
@@ -1116,10 +1179,14 @@ export class LmsAdminService {
               },
             },
           },
-          questionBanks: {
+          planQuestionBanks: {
             include: {
-              questions: {
-                include: { knowledgeEvidences: true },
+              questionBank: {
+                include: {
+                  questions: {
+                    include: { knowledgeEvidences: true },
+                  },
+                },
               },
             },
           },
@@ -1146,8 +1213,8 @@ export class LmsAdminService {
             questionKeIds.add(ke.id);
           }
         }
-        for (const qb of plan.questionBanks) {
-          for (const q of qb.questions || []) {
+        for (const pqb of plan.planQuestionBanks || []) {
+          for (const q of pqb.questionBank?.questions || []) {
             for (const ke of q.knowledgeEvidences || []) {
               questionKeIds.add(ke.id);
             }
@@ -1204,6 +1271,7 @@ export class LmsAdminService {
       include: {
         planChapters: true,
         planQuestions: true,
+        planQuestionBanks: true,
       },
     });
 
@@ -1262,6 +1330,17 @@ export class LmsAdminService {
       });
     }
 
+    // Copy planQuestionBanks
+    for (const pqb of source.planQuestionBanks || []) {
+      await this.prisma.learningPlanQuestionBank.create({
+        data: {
+          learningPlanId: newPlan.id,
+          questionBankId: pqb.questionBankId,
+          sortOrder: pqb.sortOrder,
+        },
+      });
+    }
+
     return this.prisma.learningPlan.findUnique({
       where: { id: newPlan.id },
       include: {
@@ -1277,6 +1356,16 @@ export class LmsAdminService {
         planQuestions: {
           orderBy: { sortOrder: 'asc' },
           include: { question: true },
+        },
+        planQuestionBanks: {
+          orderBy: { sortOrder: 'asc' },
+          include: {
+            questionBank: {
+              include: {
+                questions: { select: { id: true, questionText: true, title: true, type: true } },
+              },
+            },
+          },
         },
       },
     });
@@ -1317,6 +1406,16 @@ export class LmsAdminService {
         },
       },
     });
+  }
+
+  async summarizeQuestionTitle(text: string): Promise<{ summary: string }> {
+    const summary = await this.ai.summarizeTextTitle(text, 'Question');
+    return { summary };
+  }
+
+  async summarizeBlobTitle(text: string): Promise<{ summary: string }> {
+    const summary = await this.ai.summarizeTextTitle(text, 'Content Block');
+    return { summary };
   }
 
   async setPlanChapters(

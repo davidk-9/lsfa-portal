@@ -54,6 +54,16 @@ export class LmsAdminController {
     return summaryObj;
   }
 
+  @Post('questions/summarize')
+  async summarizeQuestion(@Body('text') text: string) {
+    return this.lmsAdminService.summarizeQuestionTitle(text);
+  }
+
+  @Post('blobs/summarize')
+  async summarizeBlob(@Body('text') text: string) {
+    return this.lmsAdminService.summarizeBlobTitle(text);
+  }
+
   // ── Chapters & Content Blocks (Blobs) ────────────────────────────────────────
 
   @Get('chapters')
@@ -299,8 +309,9 @@ export class LmsAdminController {
   @Post('plans/:id/question-banks')
   async setPlanQuestionBanks(
     @Param('id', ParseIntPipe) id: number,
-    @Body() dto: { bankIds: string[] },
+    @Body() dto: { bankIds?: string[]; bankItems?: Array<{ questionBankId: string; sortOrder: number }> },
   ) {
-    return this.lmsAdminService.setPlanQuestionBanks(id, dto.bankIds);
+    const items = dto.bankItems || dto.bankIds || [];
+    return this.lmsAdminService.setPlanQuestionBanks(id, items);
   }
 }
