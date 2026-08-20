@@ -355,6 +355,7 @@ export function LmsBlockEditorPage() {
               items={kes.map((k) => ({
                 id: k.id,
                 label: `${k.code} – ${k.title}`,
+                tagLabel: k.code,
                 badge: k.code,
               }))}
               selectedIds={knowledgeEvidenceIds}

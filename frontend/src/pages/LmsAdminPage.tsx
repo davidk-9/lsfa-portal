@@ -280,7 +280,7 @@ export function LmsAdminPage() {
       });
       setKeModal({ open: true, item: ke });
     } else {
-      setKeForm({ code: '', title: '', description: '', requiresCoverage: true, courseCodeIds: courseCodes.map((c) => c.id) });
+      setKeForm({ code: '', title: '', description: '', requiresCoverage: true, courseCodeIds: [] });
       setKeModal({ open: true, item: null });
     }
   };
@@ -1677,6 +1677,7 @@ export function LmsAdminPage() {
                   items={courseCodes.map((c) => ({
                     id: c.id,
                     label: `${c.code} – ${c.name}`,
+                    tagLabel: c.code,
                     badge: c.code,
                   }))}
                   selectedIds={keForm.courseCodeIds}
@@ -1810,6 +1811,7 @@ export function LmsAdminPage() {
                   items={kes.map((k) => ({
                     id: k.id,
                     label: `${k.code} – ${k.title}`,
+                    tagLabel: k.code,
                     badge: k.code,
                   }))}
                   selectedIds={blobForm.knowledgeEvidenceIds}
@@ -2519,6 +2521,7 @@ export function LmsAdminPage() {
                   items={kes.map((k) => ({
                     id: k.id,
                     label: `${k.code} – ${k.title}`,
+                    tagLabel: k.code,
                     badge: k.code,
                   }))}
                   selectedIds={questionForm.knowledgeEvidenceIds}
