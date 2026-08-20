@@ -919,8 +919,21 @@ export class LmsAdminService {
         .filter((pqb) => pqb.learningPlan.status === 'PUBLISHED')
         .map((pqb) => `${pqb.learningPlan.courseCode?.code || 'Plan'} (${pqb.learningPlan.version})`);
 
+      const orderList = Array.isArray(bank.questionOrder) ? (bank.questionOrder as string[]) : [];
+      const sortedQuestions = orderList.length > 0
+        ? [...bank.questions].sort((a, b) => {
+            const idxA = orderList.indexOf(a.id);
+            const idxB = orderList.indexOf(b.id);
+            if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+            if (idxA !== -1) return -1;
+            if (idxB !== -1) return 1;
+            return 0;
+          })
+        : bank.questions;
+
       return {
         ...bank,
+        questions: sortedQuestions,
         plans: bank.planQuestionBanks.map((pqb) => pqb.learningPlan),
         isLocked: publishedPlans.length > 0,
         publishedPlans,
@@ -939,6 +952,7 @@ export class LmsAdminService {
         name: dto.name,
         description: dto.description || '',
         courseCodeId: dto.courseCodeId || null,
+        questionOrder: dto.questionIds || [],
         questions: dto.questionIds && dto.questionIds.length > 0
           ? { connect: dto.questionIds.map((id) => ({ id })) }
           : undefined,
@@ -965,6 +979,7 @@ export class LmsAdminService {
         name: dto.name,
         description: dto.description,
         courseCodeId: dto.courseCodeId,
+        questionOrder: dto.questionIds ? dto.questionIds : undefined,
         questions: dto.questionIds
           ? { set: dto.questionIds.map((qId) => ({ id: qId })) }
           : undefined,

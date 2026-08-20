@@ -64,6 +64,7 @@ export interface QuestionBank {
   name: string;
   description?: string;
   courseCodeId?: number | null;
+  questionOrder?: string[];
   courseCode?: { id: number; code: string; name: string };
   questions?: Array<{ id: string; title?: string; questionText: string; type: number; points?: number }>;
   isLocked?: boolean;

@@ -417,6 +417,7 @@ model LmsQuestionBank {
   name             String
   description      String?
   courseCodeId     Int?
+  questionOrder    Json?                      @db.JsonB
   createdAt        DateTime                   @default(now())
   updatedAt        DateTime                   @updatedAt
   courseCode       CourseCode?                @relation(fields: [courseCodeId], references: [id], onDelete: SetNull)
