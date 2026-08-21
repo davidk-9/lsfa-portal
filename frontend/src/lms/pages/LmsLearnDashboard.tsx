@@ -78,13 +78,13 @@ export function LmsLearnDashboard() {
     }));
   };
 
-  const handleMarkBlockViewed = async (blockId: string, durationSeconds: number) => {
+  const handleToggleBlockReviewed = async (blockId: string, durationSeconds: number, markCompleted: boolean) => {
     if (!enrollment) return;
     try {
-      await lmsApi.recordBlobView(enrollment.id, blockId, durationSeconds, true);
+      await lmsApi.recordBlobView(enrollment.id, blockId, durationSeconds, markCompleted);
       await loadContent(); // Reload updated statuses
     } catch (err) {
-      console.error('Failed to mark block viewed:', err);
+      console.error('Failed to toggle block reviewed status:', err);
     }
   };
 
@@ -140,6 +140,44 @@ export function LmsLearnDashboard() {
     doc.save(`${unit.unitCode}_Learner_Guide.pdf`);
   };
 
+  const renderReviewedCheckbox = (b: ContentBlock) => {
+    const isReviewed = b.status === 'viewed' || b.status === 'competent';
+    return (
+      <label
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '8px 16px',
+          backgroundColor: isReviewed ? '#f0fdf4' : '#ffffff',
+          border: `1.5px solid ${isReviewed ? '#86efac' : '#cbd5e1'}`,
+          borderRadius: 8,
+          cursor: 'pointer',
+          fontWeight: 600,
+          fontSize: 14,
+          color: isReviewed ? '#166534' : '#334155',
+          userSelect: 'none',
+          transition: 'all 0.15s ease-in-out',
+          boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+        }}
+      >
+        <input
+          type="checkbox"
+          checked={isReviewed}
+          onChange={(e) => handleToggleBlockReviewed(b.id, b.durationSeconds, e.target.checked)}
+          style={{
+            width: 18,
+            height: 18,
+            accentColor: '#16a34a',
+            cursor: 'pointer',
+          }}
+        />
+        <span>{isReviewed ? '✓ Reviewed & Completed' : 'Mark as Reviewed'}</span>
+      </label>
+    );
+  };
+
   if (!enrollment || !unit) return null;
 
   if (isAssessmentMode) {
@@ -170,6 +208,30 @@ export function LmsLearnDashboard() {
 
   return (
     <div style={{ maxWidth: '60rem', margin: '2rem auto', padding: '0 1rem' }}>
+      {/* Top Back to Main Dashboard Navigation */}
+      <div style={{ marginBottom: '1rem' }}>
+        <button
+          type="button"
+          onClick={() => navigate('/dashboard')}
+          style={{
+            padding: '8px 16px',
+            backgroundColor: '#ffffff',
+            color: '#1e293b',
+            border: '1px solid #cbd5e1',
+            borderRadius: '0.375rem',
+            fontWeight: 600,
+            fontSize: '0.875rem',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+          }}
+        >
+          ← Back to Main Dashboard
+        </button>
+      </div>
+
       {/* Header */}
       <div style={{ backgroundColor: '#ffffff', borderRadius: '1rem', padding: '2rem', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
@@ -363,11 +425,6 @@ export function LmsLearnDashboard() {
                             <span style={{ fontSize: '1.125rem', fontWeight: 600, color: '#1e293b' }}>
                               📦 {b.title}
                             </span>
-                            {b.knowledgeEvidences && b.knowledgeEvidences.length > 0 && b.knowledgeEvidences.map((k) => (
-                              <span key={k.id} style={{ padding: '2px 8px', backgroundColor: '#eff6ff', color: '#1e40af', borderRadius: 4, fontSize: '0.75rem', fontWeight: 600 }}>
-                                KE: {k.code}
-                              </span>
-                            ))}
                           </div>
 
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -381,6 +438,11 @@ export function LmsLearnDashboard() {
                         {/* Block Expanded View (Rich Text + Video) */}
                         {isBlockExpanded && (
                           <div style={{ padding: '1.25rem', borderTop: '1px solid #f1f5f9', backgroundColor: '#fafafa' }}>
+                            {/* Top Mark as Reviewed Checkbox */}
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
+                              {renderReviewedCheckbox(b)}
+                            </div>
+
                             {b.description && <p style={{ fontSize: '0.95rem', color: '#475569', marginBottom: '1rem' }}>{b.description}</p>}
 
                             {(b.azureBlobUrl || b.vimeoId) && (
@@ -389,7 +451,7 @@ export function LmsLearnDashboard() {
                                   title={b.title}
                                   azureBlobUrl={b.azureBlobUrl}
                                   vimeoId={b.vimeoId}
-                                  onCompleted={() => handleMarkBlockViewed(b.id, b.durationSeconds)}
+                                  onCompleted={() => handleToggleBlockReviewed(b.id, b.durationSeconds, true)}
                                 />
                               </div>
                             )}
@@ -409,25 +471,10 @@ export function LmsLearnDashboard() {
                               />
                             )}
 
-                            {b.status !== 'competent' && (
-                              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
-                                <button
-                                  type="button"
-                                  onClick={() => handleMarkBlockViewed(b.id, b.durationSeconds)}
-                                  style={{
-                                    padding: '0.5rem 1rem',
-                                    backgroundColor: '#2563eb',
-                                    color: '#ffffff',
-                                    border: 'none',
-                                    borderRadius: '0.375rem',
-                                    fontWeight: 600,
-                                    cursor: 'pointer',
-                                  }}
-                                >
-                                  ✓ Mark as Reviewed & Complete
-                                </button>
-                              </div>
-                            )}
+                            {/* Bottom Mark as Reviewed Checkbox */}
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+                              {renderReviewedCheckbox(b)}
+                            </div>
                           </div>
                         )}
                       </div>

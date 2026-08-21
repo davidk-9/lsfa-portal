@@ -34,6 +34,19 @@ export class LmsDiagnosticService {
                 },
               },
             },
+            planQuestionBanks: {
+              include: {
+                questionBank: {
+                  include: {
+                    questions: {
+                      include: {
+                        coreLearningBlob: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
           },
         },
       },
@@ -43,11 +56,22 @@ export class LmsDiagnosticService {
       throw new NotFoundException(`Enrollment with ID ${request.enrollmentId} or its learning plan not found`);
     }
 
-    const planQuestions = enrollment.learningPlan.planQuestions;
-    const questions = planQuestions.map((pq) => ({
+    const standaloneQuestions = enrollment.learningPlan.planQuestions.map((pq) => ({
       ...pq.question,
       points: pq.points ?? pq.question.points,
     }));
+
+    const bankQuestions = enrollment.learningPlan.planQuestionBanks.flatMap(
+      (pqb) => pqb.questionBank?.questions || [],
+    );
+
+    const questionsMap = new Map<string, any>();
+    for (const q of [...standaloneQuestions, ...bankQuestions]) {
+      if (q && !questionsMap.has(q.id)) {
+        questionsMap.set(q.id, q);
+      }
+    }
+    const questions = Array.from(questionsMap.values());
 
     const results: QuestionResultDto[] = [];
     const gapsMap = new Map<string, LearningGapDto>();

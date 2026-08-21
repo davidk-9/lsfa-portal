@@ -9,6 +9,8 @@ export function LmsWelcome() {
   useEffect(() => {
     if (!enrollment) {
       navigate('/lms');
+    } else {
+      navigate('/lms/learn');
     }
   }, [enrollment, navigate]);
 

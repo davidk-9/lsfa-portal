@@ -29,7 +29,7 @@ export function AssessmentContainer() {
       if (!unit) return;
       try {
         setIsLoading(true);
-        const fetchedQuestions = await lmsApi.getQuestionsForUnit(unit.unitCode);
+        const fetchedQuestions = await lmsApi.getQuestionsForUnit(unit.unitCode, enrollment?.id);
         setQuestions(fetchedQuestions);
       } catch (err: any) {
         console.error('Failed to load questions:', err);
@@ -40,7 +40,7 @@ export function AssessmentContainer() {
     }
 
     loadQuestions();
-  }, [unit, navigate]);
+  }, [unit, enrollment, navigate]);
 
   if (!enrollment || !unit) return null;
 

@@ -11,6 +11,8 @@ export function LmsModeSelector() {
   useEffect(() => {
     if (!enrollment) {
       navigate('/lms');
+    } else {
+      navigate('/lms/learn');
     }
   }, [enrollment, navigate]);
 

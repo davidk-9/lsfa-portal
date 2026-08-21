@@ -41,8 +41,10 @@ export const lmsApi = {
     return response.data;
   },
 
-  async getQuestionsForUnit(unitCode: string): Promise<Question[]> {
-    const response = await axios.get<Question[]>(`${API_BASE_URL}/units/${unitCode}/questions`);
+  async getQuestionsForUnit(unitCode: string, enrollmentId?: string): Promise<Question[]> {
+    const response = await axios.get<Question[]>(`${API_BASE_URL}/units/${unitCode}/questions`, {
+      params: enrollmentId ? { enrollmentId } : undefined,
+    });
     return response.data;
   },
 
@@ -65,11 +67,6 @@ export const lmsApi = {
       viewDurationSeconds,
       completedView,
     });
-    return response.data;
-  },
-
-  async seedDatabase(): Promise<any> {
-    const response = await axios.post(`${API_BASE_URL}/seed`);
     return response.data;
   },
 };

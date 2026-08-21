@@ -12,22 +12,14 @@ export function LmsMagicLinkHandler() {
   useEffect(() => {
     async function initSession() {
       try {
-        let idToFetch = enrollmentId;
-
-        // Dev helper: seed database if test-seed route is hit
-        if (enrollmentId === 'test-seed') {
-          const seedResult = await lmsApi.seedDatabase();
-          idToFetch = seedResult.enrollmentId;
-        }
-
-        if (!idToFetch) {
+        if (!enrollmentId) {
           setError('Invalid enrollment ID');
           return;
         }
 
-        const data = await lmsApi.getEnrollment(idToFetch);
+        const data = await lmsApi.getEnrollment(enrollmentId);
         setSession(data);
-        navigate('/lms/welcome');
+        navigate('/lms/learn');
       } catch (err: any) {
         console.error('Magic link initialization failed:', err);
         setError('Failed to authenticate enrollment session. Please check your link.');

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Param, Body } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Param, Body, Query } from '@nestjs/common';
 import { LmsService } from './lms.service';
 import { SubmitAssessmentDto, UpdateLearningModeDto, RecordBlobViewDto } from './dto/lms.dto';
 
@@ -33,8 +33,11 @@ export class LmsController {
   }
 
   @Get('units/:unitCode/questions')
-  async getQuestionsForUnit(@Param('unitCode') unitCode: string) {
-    return this.lmsService.getQuestionsForUnit(unitCode);
+  async getQuestionsForUnit(
+    @Param('unitCode') unitCode: string,
+    @Query('enrollmentId') enrollmentId?: string,
+  ) {
+    return this.lmsService.getQuestionsForUnit(unitCode, enrollmentId);
   }
 
   @Get('enrollment/:id/audit-logs')
@@ -58,10 +61,5 @@ export class LmsController {
   @Post('enrollment/submit-assessment')
   async submitAssessment(@Body() dto: SubmitAssessmentDto) {
     return this.lmsService.submitAssessment(dto);
-  }
-
-  @Post('seed')
-  async seedSampleData() {
-    return this.lmsService.seedSampleData();
   }
 }
