@@ -511,15 +511,16 @@ export class LmsDiagnosticService {
       }
     }
 
+    const failedQuestionIdSet = new Set(failedQuestionIds);
     const failedKeIds = new Set<string>();
-    const directBlobIds = new Set<string>();
+    const directFailedBlobIds = new Set<string>();
 
     for (const qId of failedQuestionIds) {
       const q = questions.find((item) => item.id === qId);
       if (!q) continue;
 
-      if (q.coreLearningBlobId) directBlobIds.add(q.coreLearningBlobId);
-      if (q.supportLearningBlobId) directBlobIds.add(q.supportLearningBlobId);
+      if (q.coreLearningBlobId) directFailedBlobIds.add(q.coreLearningBlobId);
+      if (q.supportLearningBlobId) directFailedBlobIds.add(q.supportLearningBlobId);
 
       if (q.knowledgeEvidences && Array.isArray(q.knowledgeEvidences)) {
         for (const ke of q.knowledgeEvidences) {
@@ -535,7 +536,7 @@ export class LmsDiagnosticService {
     const reviewBlobSet = new Set<string>();
 
     for (const blob of allPlanBlobs) {
-      if (directBlobIds.has(blob.id)) {
+      if (directFailedBlobIds.has(blob.id)) {
         reviewBlobSet.add(blob.id);
       } else if (blob.knowledgeEvidences && Array.isArray(blob.knowledgeEvidences)) {
         const sharesFailedKe = blob.knowledgeEvidences.some((ke: any) => failedKeIds.has(ke.id));
@@ -546,6 +547,46 @@ export class LmsDiagnosticService {
     }
 
     progressData.requiredReview = Array.from(reviewBlobSet);
+
+    // Update viewedBlobs:
+    // Link between questions & content blocks via KEs/direct links:
+    // - If any linked question was answered incorrectly: remove block from viewedBlobs (mark as NOT VIEWED / UNREAD)
+    // - If all linked questions were answered correctly: ensure block is in viewedBlobs (mark as VIEWED / COMPLETED)
+    progressData.viewedBlobs = progressData.viewedBlobs || [];
+
+    for (const blob of allPlanBlobs) {
+      const blobKeIds = new Set((blob.knowledgeEvidences || []).map((k: any) => k.id));
+
+      const linkedQuestions = questions.filter((q) => {
+        if (q.coreLearningBlobId === blob.id || q.supportLearningBlobId === blob.id) return true;
+        if (q.knowledgeEvidences && Array.isArray(q.knowledgeEvidences)) {
+          return q.knowledgeEvidences.some((ke: any) => blobKeIds.has(ke.id));
+        }
+        return false;
+      });
+
+      if (linkedQuestions.length > 0) {
+        const hasFailedQuestion = linkedQuestions.some((q) => failedQuestionIdSet.has(q.id));
+
+        if (hasFailedQuestion) {
+          progressData.viewedBlobs = progressData.viewedBlobs.filter((v) => v.blobId !== blob.id);
+        } else {
+          const existing = progressData.viewedBlobs.find((v) => v.blobId === blob.id);
+          if (existing) {
+            existing.completedView = true;
+            existing.viewedAt = new Date().toISOString();
+          } else {
+            progressData.viewedBlobs.push({
+              blobId: blob.id,
+              blobType: 'Core',
+              viewedAt: new Date().toISOString(),
+              viewDurationSeconds: blob.durationSeconds || 60,
+              completedView: true,
+            });
+          }
+        }
+      }
+    }
 
     progressData.assessmentAttempts.push({
       attemptedAt: new Date().toISOString(),

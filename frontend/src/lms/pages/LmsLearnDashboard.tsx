@@ -33,7 +33,6 @@ export function LmsLearnDashboard() {
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAssessmentMode, setIsAssessmentMode] = useState(false);
-  const [filterMode, setFilterMode] = useState<'all' | 'needs_review'>('all');
   const [expandedChapters, setChaptersExpanded] = useState<Record<string, boolean>>({});
   const [expandedBlockId, setExpandedBlockId] = useState<string | null>(null);
 
@@ -59,11 +58,6 @@ export function LmsLearnDashboard() {
         map[ch.id] = true;
       });
       setChaptersExpanded(map);
-
-      // If required review exists, switch default filter to needs_review
-      if (data.requiredReviewCount > 0) {
-        setFilterMode('needs_review');
-      }
     } catch (err) {
       console.error('Failed to load course content:', err);
     } finally {
@@ -282,57 +276,13 @@ export function LmsLearnDashboard() {
             </button>
           </div>
         </div>
-
-        {/* Filter Toggle */}
-        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid #f1f5f9' }}>
-          <button
-            type="button"
-            onClick={() => setFilterMode('all')}
-            style={{
-              padding: '0.375rem 0.875rem',
-              borderRadius: '0.375rem',
-              border: 'none',
-              backgroundColor: filterMode === 'all' ? '#1e3a8a' : '#f1f5f9',
-              color: filterMode === 'all' ? '#ffffff' : '#475569',
-              fontWeight: 600,
-              fontSize: '0.875rem',
-              cursor: 'pointer',
-            }}
-          >
-            Show All Topics
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setFilterMode('needs_review')}
-            style={{
-              padding: '0.375rem 0.875rem',
-              borderRadius: '0.375rem',
-              border: 'none',
-              backgroundColor: filterMode === 'needs_review' ? '#dc2626' : '#f1f5f9',
-              color: filterMode === 'needs_review' ? '#ffffff' : '#475569',
-              fontWeight: 600,
-              fontSize: '0.875rem',
-              cursor: 'pointer',
-            }}
-          >
-            🔴 Show Only Topics Needing Review
-          </button>
-        </div>
       </div>
 
       {/* 2-Layer Tree View: Chapters -> Blocks */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         {chapters.map((ch, chIdx) => {
           const isExpanded = expandedChapters[ch.id];
-          const filteredBlobs = ch.blobs.filter((b) => {
-            if (filterMode === 'needs_review') return b.status === 'needs_review';
-            return true;
-          });
-
-          if (filterMode === 'needs_review' && filteredBlobs.length === 0) {
-            return null; // Hide chapter if no review blocks
-          }
+          const filteredBlobs = ch.blobs;
 
           return (
             <div

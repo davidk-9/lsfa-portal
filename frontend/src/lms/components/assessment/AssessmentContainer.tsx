@@ -57,6 +57,26 @@ function checkQuestionIsCorrect(question: Question, value: any): boolean {
   }
 }
 
+function hasValidDraftAnswer(question: Question, value: any): boolean {
+  if (value === undefined || value === null) return false;
+  switch (question.type) {
+    case QuestionType.MultipleChoiceSingle:
+      return String(value).trim() !== '';
+    case QuestionType.MultipleChoiceMultiple:
+    case QuestionType.OrderItems:
+    case QuestionType.MatchDefinitions:
+      return Array.isArray(value) && value.length > 0;
+    case QuestionType.FillInBlanks:
+      return Boolean(value) && Object.keys(value).length > 0;
+    case QuestionType.FreeText:
+      return typeof value === 'string' && value.trim().length > 0;
+    case QuestionType.Forms:
+      return Boolean(value);
+    default:
+      return false;
+  }
+}
+
 export function AssessmentContainer() {
   const { enrollment, unit } = useSession();
   const navigate = useNavigate();
@@ -64,7 +84,8 @@ export function AssessmentContainer() {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [allBlobs, setAllBlobs] = useState<Array<{ id: string; knowledgeEvidences?: Array<{ id: string }> }>>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [answers, setAnswers] = useState<Map<string, any>>(new Map());
+  const [draftAnswers, setDraftAnswers] = useState<Map<string, any>>(new Map());
+  const [committedAnswers, setCommittedAnswers] = useState<Map<string, any>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -131,38 +152,41 @@ export function AssessmentContainer() {
   }
 
   const currentQuestion = questions[currentIndex];
-  const currentAnswer = answers.get(currentQuestion.id);
+  const currentDraftVal = draftAnswers.get(currentQuestion.id);
 
   const handleAnswerChange = (val: any) => {
-    const updated = new Map(answers);
-    updated.set(currentQuestion.id, val);
-    setAnswers(updated);
+    setDraftAnswers((prev) => {
+      const updated = new Map(prev);
+      updated.set(currentQuestion.id, val);
+      return updated;
+    });
   };
 
-  const handleNext = () => {
+  const handleNextSubmit = async () => {
+    if (!hasValidDraftAnswer(currentQuestion, currentDraftVal)) return;
+
+    const nextCommitted = new Map(committedAnswers);
+    nextCommitted.set(currentQuestion.id, currentDraftVal);
+    setCommittedAnswers(nextCommitted);
+
     if (currentIndex < questions.length - 1) {
-      setCurrentIndex(currentIndex + 1);
+      setCurrentIndex((prev) => prev + 1);
+    } else {
+      // Last question -> Submit all responses to backend
+      await handleFinalSubmit(nextCommitted);
     }
   };
 
-  const handleBack = () => {
-    if (currentIndex > 0) {
-      setCurrentIndex(currentIndex - 1);
-    }
-  };
-
-  const canSubmit = answers.size === questions.length;
-
-  // Live Metrics
+  // Live Metrics (Calculated ONLY from committedAnswers)
   const totalQuestions = questions.length;
-  const answeredCount = answers.size;
+  const answeredCount = committedAnswers.size;
   const progressPercent = totalQuestions > 0 ? Math.round((answeredCount / totalQuestions) * 100) : 0;
 
   const failedKeIds = new Set<string>();
   const failedBlobIds = new Set<string>();
   let correctCount = 0;
 
-  answers.forEach((val, qId) => {
+  committedAnswers.forEach((val, qId) => {
     const q = questions.find((item) => item.id === qId);
     if (!q) return;
 
@@ -195,13 +219,11 @@ export function AssessmentContainer() {
 
   const topicsNeedingReviewCount = reviewBlobSet.size;
 
-  const handleSubmit = async () => {
-    if (!canSubmit) return;
-
+  const handleFinalSubmit = async (finalCommitted: Map<string, any>) => {
     try {
       setIsSubmitting(true);
 
-      const responses: QuestionAnswer[] = Array.from(answers.entries()).map(([questionId, value]) => {
+      const responses: QuestionAnswer[] = Array.from(finalCommitted.entries()).map(([questionId, value]) => {
         const question = questions.find((q) => q.id === questionId)!;
         const resp: QuestionAnswer = { questionId, questionType: question.type };
 
@@ -338,61 +360,38 @@ export function AssessmentContainer() {
           </button>
         </div>
 
-        <QuestionRenderer question={currentQuestion} value={currentAnswer} onChange={handleAnswerChange} />
+        <QuestionRenderer question={currentQuestion} value={currentDraftVal} onChange={handleAnswerChange} />
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2rem', paddingTop: '1.5rem', borderTop: '1px solid #e5e7eb' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: '2rem', paddingTop: '1.5rem', borderTop: '1px solid #e5e7eb' }}>
           <button
             type="button"
-            onClick={handleBack}
-            disabled={currentIndex === 0}
+            onClick={handleNextSubmit}
+            disabled={!hasValidDraftAnswer(currentQuestion, currentDraftVal) || isSubmitting}
             style={{
-              padding: '0.75rem 1.5rem',
+              padding: '0.75rem 2rem',
               borderRadius: '0.375rem',
-              border: '1px solid #d1d5db',
-              backgroundColor: currentIndex === 0 ? '#f3f4f6' : '#ffffff',
-              color: currentIndex === 0 ? '#9ca3af' : '#374151',
-              fontWeight: 600,
-              cursor: currentIndex === 0 ? 'not-allowed' : 'pointer',
+              backgroundColor:
+                hasValidDraftAnswer(currentQuestion, currentDraftVal) && !isSubmitting
+                  ? currentIndex === totalQuestions - 1
+                    ? '#16a34a'
+                    : '#2563eb'
+                  : '#9ca3af',
+              color: '#ffffff',
+              border: 'none',
+              fontWeight: 'bold',
+              fontSize: '1rem',
+              cursor:
+                hasValidDraftAnswer(currentQuestion, currentDraftVal) && !isSubmitting
+                  ? 'pointer'
+                  : 'not-allowed',
             }}
           >
-            ← Previous
+            {isSubmitting
+              ? 'Submitting Assessment...'
+              : currentIndex < totalQuestions - 1
+              ? 'Submit Answer →'
+              : 'Submit Assessment 🚀'}
           </button>
-
-          {currentIndex < questions.length - 1 ? (
-            <button
-              type="button"
-              onClick={handleNext}
-              style={{
-                padding: '0.75rem 1.5rem',
-                borderRadius: '0.375rem',
-                backgroundColor: '#2563eb',
-                color: '#ffffff',
-                border: 'none',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              Next →
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={!canSubmit || isSubmitting}
-              style={{
-                padding: '0.75rem 2rem',
-                borderRadius: '0.375rem',
-                backgroundColor: canSubmit && !isSubmitting ? '#16a34a' : '#9ca3af',
-                color: '#ffffff',
-                border: 'none',
-                fontWeight: 'bold',
-                fontSize: '1.125rem',
-                cursor: canSubmit && !isSubmitting ? 'pointer' : 'not-allowed',
-              }}
-            >
-              {isSubmitting ? 'Submitting...' : 'Submit Assessment 🎉'}
-            </button>
-          )}
         </div>
       </div>
 
