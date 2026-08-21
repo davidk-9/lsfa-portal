@@ -23,7 +23,13 @@ export function DashboardPage() {
     setLoadingEnrolments(true);
     try {
       const res = await contactsApi.getMyEnrolments();
-      setEnrolments(Array.isArray(res.data) ? res.data : []);
+      const data = res.data;
+      const enrolmentList = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.enrolments)
+        ? data.enrolments
+        : [];
+      setEnrolments(enrolmentList);
     } catch (err) {
       console.error('Failed to load enrolments for student dashboard:', err);
       setEnrolments([]);
@@ -32,7 +38,12 @@ export function DashboardPage() {
     }
   };
 
-  const activeEnrolments = enrolments.filter((enr) => enr.axStatus !== 'C' && enr.isActive !== false);
+  const activeEnrolments = enrolments.filter((enr) => {
+    if (enr.isActive === false) return false;
+    if (!enr.axStatus) return true;
+    const s = String(enr.axStatus).trim().toUpperCase();
+    return s !== 'C' && s !== 'CANCELLED' && s !== 'WITHDRAWN';
+  });
 
   return (
     <div style={{ maxWidth: 900, margin: '0 auto', paddingBottom: 40 }}>
