@@ -119,6 +119,17 @@ function ProfileIcon() {
   );
 }
 
+function DashboardIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+    </svg>
+  );
+}
+
 function LmsAdminIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -206,8 +217,13 @@ export function AppLayout() {
             </div>
 
             <nav className="sidebar-nav">
+              <NavLink to="/dashboard" className={({ isActive }) => getSidebarLinkClassName(isActive, collapsed)} title="Dashboard">
+                <span className="nav-link-icon"><DashboardIcon /></span>
+                {!collapsed && <span className="nav-link-label">Dashboard</span>}
+              </NavLink>
+
               {isSuperOrAdmin && (
-                <div style={{ padding: '0 8px 12px 8px' }}>
+                <div style={{ padding: '8px 8px 12px 8px' }}>
                   <button
                     type="button"
                     onClick={() => setIsSearchOpen(true)}

@@ -32,6 +32,8 @@ export function DashboardPage() {
     }
   };
 
+  const activeEnrolments = enrolments.filter((enr) => enr.axStatus !== 'C' && enr.isActive !== false);
+
   return (
     <div style={{ maxWidth: 900, margin: '0 auto', paddingBottom: 40 }}>
       <div style={{ marginBottom: 24 }}>
@@ -45,8 +47,8 @@ export function DashboardPage() {
           <div style={{ ...cardStyle, background: '#f8fafc', color: '#64748b' }}>
             Loading your online learning modules...
           </div>
-        ) : enrolments.length === 0 ? (
-          /* Default Axcelerate Online Learning Card when no enrolments exist */
+        ) : activeEnrolments.length === 0 ? (
+          /* Default Axcelerate Online Learning Card when no active enrolments exist */
           <div style={{ ...cardStyle, background: '#f0f9ff', borderColor: '#bae6fd' }}>
             <div style={{ ...iconBadgeStyle, background: '#e0f2fe' }}>🎓</div>
             <h3 style={{ margin: '12px 0 6px 0', fontSize: 18, color: '#0369a1' }}>Online Learning Portal</h3>
@@ -69,11 +71,11 @@ export function DashboardPage() {
             </a>
           </div>
         ) : (
-          /* Dedicated card for each enrolment */
-          enrolments.map((enr) => {
-            const isLsfaLms =
-              enr.workshopProgress?.lmsEnabled === true ||
-              (!enr.workshopProgress && Boolean(enr.learningPlanId));
+          /* Dedicated card for each active enrolment */
+          activeEnrolments.map((enr) => {
+            const hasLearningPlan = Boolean(enr.learningPlanId || enr.learningPlan);
+            const isLmsEnabled = enr.workshopProgress?.lmsEnabled === true;
+            const isLsfaLms = hasLearningPlan && isLmsEnabled;
 
             const code =
               enr.learningPlan?.courseCode?.code ||
@@ -85,6 +87,12 @@ export function DashboardPage() {
               'Online Learning Module';
             const modeLabel =
               enr.learningMode === 3 ? 'DeepDive' : enr.learningMode === 2 ? 'Assessment' : `Mode ${enr.learningMode}`;
+
+            const statusLabel = enr.axStatus === 'B' ? 'Booked'
+              : enr.axStatus === 'T' ? 'Tentative'
+              : enr.axStatus === 'P' ? 'Paid'
+              : enr.axStatus === 'M' ? 'Moved'
+              : enr.axStatus || null;
 
             if (isLsfaLms) {
               return (
@@ -103,7 +111,20 @@ export function DashboardPage() {
                   </div>
 
                   <h3 style={{ margin: '12px 0 4px 0', fontSize: 18, color: '#065f46' }}>{code}</h3>
-                  <p style={{ margin: '0 0 12px 0', fontSize: 13, color: '#047857', fontWeight: 500 }}>{courseName}</p>
+                  <p style={{ margin: '0 0 4px 0', fontSize: 13, color: '#047857', fontWeight: 500 }}>{courseName}</p>
+                  
+                  <div style={{ fontSize: 12, color: '#059669', marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {enr.instanceId && (
+                      <span style={{ background: '#dcfce7', padding: '2px 6px', borderRadius: 4, fontWeight: 600 }}>
+                        Workshop #{enr.instanceId}
+                      </span>
+                    )}
+                    {statusLabel && (
+                      <span style={{ background: '#dcfce7', padding: '2px 6px', borderRadius: 4 }}>
+                        Status: {statusLabel}
+                      </span>
+                    )}
+                  </div>
 
                   <p style={{ color: '#047857', fontSize: 13, marginBottom: 20, flex: 1, lineHeight: 1.5 }}>
                     {enr.isCompetent
@@ -138,9 +159,20 @@ export function DashboardPage() {
                 </div>
 
                 <h3 style={{ margin: '12px 0 4px 0', fontSize: 18, color: '#0369a1' }}>{code}</h3>
-                <p style={{ margin: '0 0 12px 0', fontSize: 13, color: '#0284c7', fontWeight: 500 }}>
-                  {courseName} {enr.instanceId ? `(Workshop #${enr.instanceId})` : ''} {enr.axStatus ? `• Status: ${enr.axStatus === 'B' ? 'Booked' : enr.axStatus === 'T' ? 'Tentative' : enr.axStatus === 'P' ? 'Paid' : enr.axStatus === 'M' ? 'Moved' : enr.axStatus === 'C' ? 'Cancelled' : enr.axStatus}` : ''}
-                </p>
+                <p style={{ margin: '0 0 4px 0', fontSize: 13, color: '#0284c7', fontWeight: 500 }}>{courseName}</p>
+                
+                <div style={{ fontSize: 12, color: '#0284c7', marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {enr.instanceId && (
+                    <span style={{ background: '#e0f2fe', padding: '2px 6px', borderRadius: 4, fontWeight: 600 }}>
+                      Workshop #{enr.instanceId}
+                    </span>
+                  )}
+                  {statusLabel && (
+                    <span style={{ background: '#e0f2fe', padding: '2px 6px', borderRadius: 4 }}>
+                      Status: {statusLabel}
+                    </span>
+                  )}
+                </div>
 
                 <p style={{ color: '#0369a1', fontSize: 13, marginBottom: 20, flex: 1, lineHeight: 1.5 }}>
                   This workshop uses Axcelerate Online Learning. Click below to access your learning modules in Axcelerate.
