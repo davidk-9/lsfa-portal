@@ -64,11 +64,13 @@ export interface Question {
   type: QuestionType;
   questionText: string;
   questionData?: any;
+  correctAnswer?: any;
   points: number;
   coreLearningBlobId?: string | null;
   supportLearningBlobId?: string | null;
   coreLearningBlob?: LearningBlob | null;
   supportLearningBlob?: LearningBlob | null;
+  knowledgeEvidences?: Array<{ id: string; code: string; title: string }>;
 }
 
 export interface QuestionAnswer {

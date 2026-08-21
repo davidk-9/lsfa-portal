@@ -191,6 +191,7 @@ export class LmsService {
                     include: {
                       coreLearningBlob: true,
                       supportLearningBlob: true,
+                      knowledgeEvidences: true,
                     },
                   },
                 },
@@ -204,6 +205,7 @@ export class LmsService {
                         include: {
                           coreLearningBlob: true,
                           supportLearningBlob: true,
+                          knowledgeEvidences: true,
                         },
                       },
                     },
@@ -241,6 +243,7 @@ export class LmsService {
                     include: {
                       coreLearningBlob: true,
                       supportLearningBlob: true,
+                      knowledgeEvidences: true,
                     },
                   },
                 },
@@ -254,6 +257,7 @@ export class LmsService {
                         include: {
                           coreLearningBlob: true,
                           supportLearningBlob: true,
+                          knowledgeEvidences: true,
                         },
                       },
                     },
@@ -279,6 +283,7 @@ export class LmsService {
                   include: {
                     coreLearningBlob: true,
                     supportLearningBlob: true,
+                    knowledgeEvidences: true,
                   },
                 },
               },
@@ -292,6 +297,7 @@ export class LmsService {
                       include: {
                         coreLearningBlob: true,
                         supportLearningBlob: true,
+                        knowledgeEvidences: true,
                       },
                     },
                   },
@@ -357,11 +363,13 @@ export class LmsService {
         type: q.type,
         questionText: q.questionText,
         questionData: parsedData,
+        correctAnswer: q.correctAnswer,
         points: q.points ?? 1,
         coreLearningBlobId: q.coreLearningBlobId,
         supportLearningBlobId: q.supportLearningBlobId,
         coreLearningBlob: q.coreLearningBlob,
         supportLearningBlob: q.supportLearningBlob,
+        knowledgeEvidences: q.knowledgeEvidences || [],
       };
     });
   }

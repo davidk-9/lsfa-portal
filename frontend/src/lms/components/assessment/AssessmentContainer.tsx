@@ -4,14 +4,65 @@ import { useSession } from '../../contexts/SessionContext';
 import { lmsApi } from '../../services/lmsApi';
 import { QuestionType, type Question, type QuestionAnswer } from '../../types/lms';
 import { QuestionRenderer } from './QuestionRenderer';
-import { ProgressDots } from './ProgressDots';
 import { HelpModal } from './HelpModal';
+
+function checkQuestionIsCorrect(question: Question, value: any): boolean {
+  if (value === undefined || value === null) return false;
+  if (!question.correctAnswer) return false;
+
+  const rawCorrect = typeof question.correctAnswer === 'string'
+    ? JSON.parse(question.correctAnswer)
+    : question.correctAnswer;
+
+  switch (question.type) {
+    case QuestionType.MultipleChoiceSingle: {
+      const expected = (rawCorrect?.answer || rawCorrect || '').toString().trim().toUpperCase();
+      const student = (value || '').toString().trim().toUpperCase();
+      return student !== '' && student === expected;
+    }
+    case QuestionType.MultipleChoiceMultiple: {
+      const expected = (rawCorrect?.answers || []).map((a: any) => String(a).trim().toUpperCase()).sort();
+      const student = (Array.isArray(value) ? value : []).map((a: any) => String(a).trim().toUpperCase()).sort();
+      return expected.length > 0 && expected.length === student.length && expected.every((val: string, idx: number) => val === student[idx]);
+    }
+    case QuestionType.OrderItems: {
+      const expected = (rawCorrect?.order || []).map(String);
+      const student = (Array.isArray(value) ? value : []).map(String);
+      return expected.length > 0 && expected.length === student.length && expected.every((val: string, idx: number) => val === student[idx]);
+    }
+    case QuestionType.MatchDefinitions: {
+      const expected = (rawCorrect?.matches || []).map(String).sort();
+      const student = (Array.isArray(value) ? value : []).map(String).sort();
+      return expected.length > 0 && expected.length === student.length && expected.every((val: string, idx: number) => val === student[idx]);
+    }
+    case QuestionType.FillInBlanks: {
+      const expected = (rawCorrect?.blanks || []).map((b: any) => String(b).trim().toLowerCase());
+      let student: string[] = [];
+      if (Array.isArray(value)) {
+        student = value.map((v: any) => String(v?.answer || v || '').trim().toLowerCase());
+      } else if (value && typeof value === 'object') {
+        student = Object.keys(value).sort((a, b) => Number(a) - Number(b)).map((k) => String(value[k]?.answer || value[k] || '').trim().toLowerCase());
+      }
+      return expected.length > 0 && expected.length === student.length && expected.every((val: string, idx: number) => val === student[idx]);
+    }
+    case QuestionType.FreeText: {
+      const str = String(value || '').trim();
+      return str.length >= 10;
+    }
+    case QuestionType.Forms: {
+      return Boolean(value);
+    }
+    default:
+      return false;
+  }
+}
 
 export function AssessmentContainer() {
   const { enrollment, unit } = useSession();
   const navigate = useNavigate();
 
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [allBlobs, setAllBlobs] = useState<Array<{ id: string; knowledgeEvidences?: Array<{ id: string }> }>>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Map<string, any>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
@@ -25,12 +76,19 @@ export function AssessmentContainer() {
       return;
     }
 
-    async function loadQuestions() {
+    async function loadQuestionsAndBlobs() {
       if (!unit) return;
       try {
         setIsLoading(true);
-        const fetchedQuestions = await lmsApi.getQuestionsForUnit(unit.unitCode, enrollment?.id);
+        const [fetchedQuestions, content] = await Promise.all([
+          lmsApi.getQuestionsForUnit(unit.unitCode, enrollment?.id),
+          enrollment ? lmsApi.getEnrollmentContent(enrollment.id) : Promise.resolve({ chapters: [] }),
+        ]);
+
         setQuestions(fetchedQuestions);
+
+        const blobs = (content.chapters || []).flatMap((ch: any) => ch.blobs || []);
+        setAllBlobs(blobs);
       } catch (err: any) {
         console.error('Failed to load questions:', err);
         setError('Failed to load questions. Please try again.');
@@ -39,7 +97,7 @@ export function AssessmentContainer() {
       }
     }
 
-    loadQuestions();
+    loadQuestionsAndBlobs();
   }, [unit, enrollment, navigate]);
 
   if (!enrollment || !unit) return null;
@@ -74,9 +132,6 @@ export function AssessmentContainer() {
 
   const currentQuestion = questions[currentIndex];
   const currentAnswer = answers.get(currentQuestion.id);
-  const answeredIndices = new Set(
-    Array.from(answers.keys()).map((id) => questions.findIndex((q) => q.id === id))
-  );
 
   const handleAnswerChange = (val: any) => {
     const updated = new Map(answers);
@@ -97,6 +152,48 @@ export function AssessmentContainer() {
   };
 
   const canSubmit = answers.size === questions.length;
+
+  // Live Metrics
+  const totalQuestions = questions.length;
+  const answeredCount = answers.size;
+  const progressPercent = totalQuestions > 0 ? Math.round((answeredCount / totalQuestions) * 100) : 0;
+
+  const failedKeIds = new Set<string>();
+  const failedBlobIds = new Set<string>();
+  let correctCount = 0;
+
+  answers.forEach((val, qId) => {
+    const q = questions.find((item) => item.id === qId);
+    if (!q) return;
+
+    const isCorrect = checkQuestionIsCorrect(q, val);
+    if (isCorrect) {
+      correctCount++;
+    } else {
+      if (q.coreLearningBlobId) failedBlobIds.add(q.coreLearningBlobId);
+      if (q.supportLearningBlobId) failedBlobIds.add(q.supportLearningBlobId);
+
+      if (q.knowledgeEvidences && Array.isArray(q.knowledgeEvidences)) {
+        q.knowledgeEvidences.forEach((ke: any) => {
+          if (ke?.id) failedKeIds.add(ke.id);
+        });
+      }
+    }
+  });
+
+  const reviewBlobSet = new Set<string>();
+  allBlobs.forEach((blob) => {
+    if (failedBlobIds.has(blob.id)) {
+      reviewBlobSet.add(blob.id);
+    } else if (blob.knowledgeEvidences && Array.isArray(blob.knowledgeEvidences)) {
+      const sharesKe = blob.knowledgeEvidences.some((ke: any) => failedKeIds.has(ke.id));
+      if (sharesKe) {
+        reviewBlobSet.add(blob.id);
+      }
+    }
+  });
+
+  const topicsNeedingReviewCount = reviewBlobSet.size;
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -148,16 +245,56 @@ export function AssessmentContainer() {
           {unit.unitCode} - {unit.title}
         </h2>
         <p style={{ fontSize: '1rem', color: '#6b7280' }}>
-          Question {currentIndex + 1} of {questions.length}
+          Fast-Track Assessment Mode
         </p>
       </div>
 
-      <ProgressDots
-        total={questions.length}
-        current={currentIndex}
-        answeredIndices={answeredIndices}
-        onSelect={(idx) => setCurrentIndex(idx)}
-      />
+      {/* Progress Bar & Live Metrics Box */}
+      <div style={{ backgroundColor: '#ffffff', borderRadius: 12, padding: '1.25rem 1.5rem', border: '1px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.04)', marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, fontSize: 14, fontWeight: 600, color: '#334155' }}>
+          <span>Question {currentIndex + 1} of {totalQuestions}</span>
+          <span>{answeredCount} of {totalQuestions} answered ({progressPercent}%)</span>
+        </div>
+
+        {/* Progress Bar Track */}
+        <div style={{ width: '100%', height: 10, backgroundColor: '#f1f5f9', borderRadius: 999, overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+          <div
+            style={{
+              width: `${progressPercent}%`,
+              height: '100%',
+              backgroundColor: '#2563eb',
+              borderRadius: 999,
+              transition: 'width 0.3s ease-in-out',
+            }}
+          />
+        </div>
+
+        {/* Live Metrics Row */}
+        <div style={{ display: 'flex', gap: 12, marginTop: 14, paddingTop: 12, borderTop: '1px solid #f1f5f9', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600, color: '#166534', backgroundColor: '#f0fdf4', padding: '6px 12px', borderRadius: 6, border: '1px solid #bbf7d0' }}>
+            <span>✅</span>
+            <span>{correctCount} / {answeredCount} correct</span>
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 13,
+              fontWeight: 600,
+              color: topicsNeedingReviewCount > 0 ? '#991b1b' : '#334155',
+              backgroundColor: topicsNeedingReviewCount > 0 ? '#fef2f2' : '#f8fafc',
+              padding: '6px 12px',
+              borderRadius: 6,
+              border: `1px solid ${topicsNeedingReviewCount > 0 ? '#fecaca' : '#e2e8f0'}`,
+            }}
+          >
+            <span>{topicsNeedingReviewCount > 0 ? '🔴' : '📖'}</span>
+            <span>{topicsNeedingReviewCount} {topicsNeedingReviewCount === 1 ? 'topic requires' : 'topics require'} review</span>
+          </div>
+        </div>
+      </div>
 
       <div
         style={{

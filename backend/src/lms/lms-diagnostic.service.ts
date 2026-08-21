@@ -24,12 +24,27 @@ export class LmsDiagnosticService {
       include: {
         learningPlan: {
           include: {
+            planChapters: {
+              include: {
+                chapter: {
+                  include: {
+                    blobs: {
+                      include: {
+                        knowledgeEvidences: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
             planQuestions: {
               orderBy: { sortOrder: 'asc' },
               include: {
                 question: {
                   include: {
                     coreLearningBlob: true,
+                    supportLearningBlob: true,
+                    knowledgeEvidences: true,
                   },
                 },
               },
@@ -41,6 +56,8 @@ export class LmsDiagnosticService {
                     questions: {
                       include: {
                         coreLearningBlob: true,
+                        supportLearningBlob: true,
+                        knowledgeEvidences: true,
                       },
                     },
                   },
@@ -138,7 +155,7 @@ export class LmsDiagnosticService {
     }
 
     await this.updateProgressData(
-      enrollment.id,
+      enrollment,
       enrollment.progressData,
       request.responses,
       results,
@@ -428,7 +445,7 @@ export class LmsDiagnosticService {
   }
 
   private async updateProgressData(
-    enrollmentId: string,
+    enrollment: any,
     existingProgressRaw: any,
     responses: QuestionResponseDto[],
     results: QuestionResultDto[],
@@ -494,11 +511,41 @@ export class LmsDiagnosticService {
       }
     }
 
-    const reviewBlobIds = failedQuestionIds
-      .map((qId) => questions.find((q) => q.id === qId)?.coreLearningBlobId)
-      .filter((bId): bId is string => Boolean(bId));
+    const failedKeIds = new Set<string>();
+    const directBlobIds = new Set<string>();
 
-    progressData.requiredReview = Array.from(new Set(reviewBlobIds));
+    for (const qId of failedQuestionIds) {
+      const q = questions.find((item) => item.id === qId);
+      if (!q) continue;
+
+      if (q.coreLearningBlobId) directBlobIds.add(q.coreLearningBlobId);
+      if (q.supportLearningBlobId) directBlobIds.add(q.supportLearningBlobId);
+
+      if (q.knowledgeEvidences && Array.isArray(q.knowledgeEvidences)) {
+        for (const ke of q.knowledgeEvidences) {
+          if (ke?.id) failedKeIds.add(ke.id);
+        }
+      }
+    }
+
+    const allPlanBlobs = (enrollment?.learningPlan?.planChapters || []).flatMap(
+      (pc: any) => pc.chapter?.blobs || [],
+    );
+
+    const reviewBlobSet = new Set<string>();
+
+    for (const blob of allPlanBlobs) {
+      if (directBlobIds.has(blob.id)) {
+        reviewBlobSet.add(blob.id);
+      } else if (blob.knowledgeEvidences && Array.isArray(blob.knowledgeEvidences)) {
+        const sharesFailedKe = blob.knowledgeEvidences.some((ke: any) => failedKeIds.has(ke.id));
+        if (sharesFailedKe) {
+          reviewBlobSet.add(blob.id);
+        }
+      }
+    }
+
+    progressData.requiredReview = Array.from(reviewBlobSet);
 
     progressData.assessmentAttempts.push({
       attemptedAt: new Date().toISOString(),
@@ -514,7 +561,7 @@ export class LmsDiagnosticService {
     progressData.lastActivityAt = new Date().toISOString();
 
     await this.prisma.lmsEnrollment.update({
-      where: { id: enrollmentId },
+      where: { id: enrollment.id },
       data: {
         progressData: progressData as any,
         currentScore: earnedPoints,
